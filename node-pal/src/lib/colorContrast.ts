@@ -24,3 +24,12 @@ export function getContrastTextColor(background: string): "#ffffff" | "#0f172a" 
   const luminance = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
   return luminance > 0.55 ? "#0f172a" : "#ffffff";
 }
+
+/** Blend accent toward white for a softer, premium header tone. */
+export function softenAccentColor(hex: string, mix = 0.22): string {
+  const rgb = parseHex(hex);
+  if (!rgb) return hex;
+  const blend = (channel: number) => Math.round(channel + (255 - channel) * mix);
+  const toHex = (value: number) => value.toString(16).padStart(2, "0");
+  return `#${toHex(blend(rgb.r))}${toHex(blend(rgb.g))}${toHex(blend(rgb.b))}`;
+}

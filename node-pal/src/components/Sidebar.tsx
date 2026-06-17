@@ -21,7 +21,7 @@ import { CUSTOM_OBJECTS, type CustomObjectId } from "@/lib/customObjects";
 interface Props {
   schema: Schema;
   onUpdateSchema: Dispatch<SetStateAction<Schema>>;
-  onOpenSchemaBuilder: (groupId?: string) => void;
+  onOpenSchemaBuilder: (groupId: string) => void;
   onDeleteGroup: (groupId: string) => void;
 }
 
@@ -40,7 +40,7 @@ export function Sidebar({ schema, onUpdateSchema, onOpenSchemaBuilder, onDeleteG
       id: `ng_${Date.now()}`,
       name: `Group ${schema.nodeGroups.length + 1}`,
       properties: [],
-      color: "#3b82f6",
+      color: "#5b8fd9",
     };
 
     onUpdateSchema((prev) => ({

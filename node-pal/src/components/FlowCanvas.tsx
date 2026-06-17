@@ -35,7 +35,7 @@ import { ContainerNode } from "./nodes/ContainerNode";
 import { CustomObjectNode } from "./nodes/CustomObjectNode";
 import { MetadataSidebar } from "./MetadataSidebar";
 import { EdgeSettingsPanel, applyConnectionSettingsToEdge } from "./EdgeSettingsPanel";
-import { SchemaBuilder } from "./SchemaBuilder";
+import { SchemaEditorSidebar } from "./SchemaEditorSidebar";
 import { GlossaryView } from "./GlossaryView";
 import { CustomEdge } from "./edges/CustomEdge";
 import { ClearCanvasDialog } from "./ClearCanvasDialog";
@@ -48,7 +48,6 @@ import { Button } from "@/components/ui/button";
 import {
   Trash2,
   X,
-  Settings,
   LayoutGrid,
   BookOpen,
   PenTool,
@@ -146,8 +145,7 @@ function InnerCanvas() {
   const [selectedFieldMetadata, setSelectedFieldMetadata] = useState<MetadataValues | null>(null);
   const [lineageAnchor, setLineageAnchor] = useState<{ nodeId: string; fieldId?: string | null } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [isSchemaBuilderOpen, setIsSchemaBuilderOpen] = useState(false);
-  const [schemaBuilderFocusGroupId, setSchemaBuilderFocusGroupId] = useState<string | null>(null);
+  const [schemaEditorGroupId, setSchemaEditorGroupId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"canvas" | "glossary">("canvas");
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -156,6 +154,10 @@ function InnerCanvas() {
   const pendingViewportRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [edgeSettingsOpen, setEdgeSettingsOpen] = useState(false);
+  const closeSchemaEditor = useCallback(() => {
+    setSchemaEditorGroupId(null);
+  }, []);
+
   const clearMetadataSelection = useCallback(() => {
     setSelectedNodeId(null);
     setSelectedFieldId(null);
@@ -938,9 +940,10 @@ function InnerCanvas() {
       setSelectedFieldMetadata(
         field.metadata && typeof field.metadata === "object" ? { ...field.metadata } : {},
       );
+      closeSchemaEditor();
       setSidebarOpen(true);
     },
-    [nodes, clearEdgeSelection],
+    [nodes, clearEdgeSelection, closeSchemaEditor],
   );
 
   const handleDeleteField = useCallback(
@@ -1153,9 +1156,10 @@ function InnerCanvas() {
         nodeData.metadata && typeof nodeData.metadata === "object" ? { ...nodeData.metadata } : {},
       );
       setSelectedFieldMetadata(null);
+      closeSchemaEditor();
       setSidebarOpen(true);
     },
-    [clearEdgeSelection, clearMetadataSelection],
+    [clearEdgeSelection, clearMetadataSelection, closeSchemaEditor],
   );
 
   const sidebarSelectionContext = sidebarSelection?.selectionContext ?? "node";
@@ -1189,14 +1193,13 @@ function InnerCanvas() {
         cleanupAfterNodeDelete(removedNodeIds);
       }
 
-      if (schemaBuilderFocusGroupId === groupId) {
-        setSchemaBuilderFocusGroupId(null);
-        setIsSchemaBuilderOpen(false);
+      if (schemaEditorGroupId === groupId) {
+        setSchemaEditorGroupId(null);
       }
 
       toast.success("Node group deleted");
     },
-    [schema.nodeGroups, nodes, cleanupAfterNodeDelete, schemaBuilderFocusGroupId],
+    [schema.nodeGroups, nodes, cleanupAfterNodeDelete, schemaEditorGroupId],
   );
 
   const handleUpdateMetadata = useCallback(
@@ -1284,12 +1287,11 @@ function InnerCanvas() {
     ? (nodes.find((n) => n.id === activeTouchpointId)?.data as { label?: string } | undefined)?.label
     : null;
 
-  const handleOpenSchemaBuilder = useCallback((groupId?: string) => {
-    if (groupId) {
-      setSchemaBuilderFocusGroupId(groupId);
-    }
-    setIsSchemaBuilderOpen(true);
-  }, []);
+  const handleOpenSchemaEditor = useCallback((groupId: string) => {
+    clearMetadataSelection();
+    clearEdgeSelection();
+    setSchemaEditorGroupId(groupId);
+  }, [clearMetadataSelection, clearEdgeSelection]);
 
   const buildExportPayload = useCallback(() => {
     const drawingData = drawingSnapshotRef.current
@@ -1757,23 +1759,6 @@ function InnerCanvas() {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <SchemaBuilder
-            schema={schema}
-            onUpdateSchema={setSchema}
-            isOpen={isSchemaBuilderOpen}
-            onOpenChange={setIsSchemaBuilderOpen}
-            focusGroupId={schemaBuilderFocusGroupId}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setSchemaBuilderFocusGroupId(null);
-              setIsSchemaBuilderOpen(true);
-            }}
-          >
-            <Settings className="mr-1.5 h-4 w-4" /> Schema
-          </Button>
           {activeView === "canvas" && (
             <>
               <Button variant={drawingMode ? "default" : "outline"} size="sm" onClick={toggleDrawingMode}>
@@ -1827,7 +1812,7 @@ function InnerCanvas() {
         <Sidebar
           schema={schema}
           onUpdateSchema={setSchema}
-          onOpenSchemaBuilder={handleOpenSchemaBuilder}
+          onOpenSchemaBuilder={handleOpenSchemaEditor}
           onDeleteGroup={handleDeleteGroup}
         />
         {activeView === "glossary" ? (
@@ -1998,8 +1983,16 @@ function InnerCanvas() {
         onConfirm={handleEncryptionConfirm}
       />
 
+      <SchemaEditorSidebar
+        isOpen={Boolean(schemaEditorGroupId)}
+        groupId={schemaEditorGroupId}
+        schema={schema}
+        onUpdateSchema={setSchema}
+        onClose={closeSchemaEditor}
+      />
+
       <MetadataSidebar
-        isOpen={sidebarOpen && Boolean(sidebarSelection)}
+        isOpen={sidebarOpen && Boolean(sidebarSelection) && !schemaEditorGroupId}
         onClose={() => setSidebarOpen(false)}
         nodeId={sidebarSelection?.nodeId ?? null}
         nodeLabel={sidebarSelection?.nodeLabel ?? null}

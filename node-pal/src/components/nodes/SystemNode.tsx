@@ -22,10 +22,11 @@ import {
   getEffectiveSections,
   getFieldsForSection,
   getRenderableSections,
+  hasExplicitSections,
   shouldShowSectionSelect,
 } from "@/lib/nodeSections";
 import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons";
-import { getContrastTextColor } from "@/lib/colorContrast";
+import { getContrastTextColor, softenAccentColor } from "@/lib/colorContrast";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import {
   FIELD_CONNECTION_MIME,
@@ -96,10 +97,11 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     requestAnimationFrame(() => updateNodeInternals(id));
   }, [id, updateNodeInternals]);
 
-  const accentColor =
+  const accentColor = softenAccentColor(
     data.color ||
-    schema?.nodeGroups?.find((group) => group?.id === data.nodeGroupId)?.color ||
-    "#3b82f6";
+      schema?.nodeGroups?.find((group) => group?.id === data.nodeGroupId)?.color ||
+      "#5b8fd9",
+  );
   const headerTextColor = getContrastTextColor(accentColor);
   const HeaderIcon = getNodeIcon(data.icon);
 
@@ -204,6 +206,46 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const tableGridStyle = {
     gridTemplateColumns: `minmax(100px, 1.2fr) ${tableColumns.map(() => "minmax(72px, 1fr)").join(" ")} 52px`,
   };
+
+  const explicitSections = hasExplicitSections(data);
+  const headerSections = renderableSections.filter((section) => section.showHeader);
+
+  const renderFieldList = (sectionFields: Field[]) => (
+    <div className={tableExpanded ? "system-node__table" : "system-node__field-list"}>
+      {tableExpanded && (
+        <div className="system-node__table-header" style={tableGridStyle}>
+          <div className="system-node__table-cell system-node__table-cell--name">Field</div>
+          {tableColumns.map((column) => (
+            <div
+              key={column.id}
+              className="system-node__table-cell system-node__table-cell--header"
+              title={SCHEMA_SCOPE_LABELS.group.columnTooltip}
+            >
+              {column.name}
+            </div>
+          ))}
+          <div className="system-node__table-cell system-node__table-cell--actions" />
+        </div>
+      )}
+
+      {sectionFields.map((field) => (
+        <FieldRow
+          key={field.id}
+          nodeId={id}
+          field={field}
+          variant={tableExpanded ? "expanded" : "compact"}
+          tableGridStyle={tableGridStyle}
+          tableColumns={tableColumns}
+          fieldProperties={fieldProperties}
+          isActive={activeFieldIds.has(field.id)}
+          isFaded={fieldLineageActive && !activeFieldIds.has(field.id)}
+          onFieldSelect={onFieldSelect}
+          onDeleteField={onDeleteField}
+          onFieldConnectDrop={onFieldConnectDrop}
+        />
+      ))}
+    </div>
+  );
 
   return (
     <div
@@ -338,18 +380,20 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
       </SmartHoverAttributes>
 
       {!collapsed && (
-        <div className="system-node__body nodrag nopan nowheel" onPointerDown={stopPointer}>
+        <div
+          className={`system-node__body nodrag nopan nowheel ${fields.length === 0 ? "system-node__body--empty" : ""}`}
+          onPointerDown={stopPointer}
+        >
           <div className="system-node__sections">
-            {renderableSections.map((section) => {
+            {!explicitSections && fields.length > 0 && renderFieldList(fields)}
+
+            {headerSections.map((section) => {
               const sectionFields = getFieldsForSection(fields, section.id);
+              if (sectionFields.length === 0) return null;
               const isEditingSection = editingSectionId === section.id;
 
               return (
-                <div
-                  key={section.id}
-                  className={`system-node__section ${section.showHeader ? "" : "system-node__section--flat"}`}
-                >
-                  {section.showHeader && (
+                <div key={section.id} className="system-node__section">
                   <div className="system-node__section-header">
                     {isEditingSection ? (
                       <input
@@ -377,8 +421,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                         {section.name}
                       </button>
                     )}
-                    <span className="system-node__section-count">{sectionFields.length} fields</span>
-                    {sections.length > 1 && sectionFields.length === 0 && (
+                    {sections.length > 1 && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -386,52 +429,14 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                           deleteSection(section.id);
                         }}
                         className="system-node__section-delete nodrag nopan"
-                        title="Remove empty section"
+                        title="Remove section"
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
                     )}
                   </div>
-                  )}
 
-                  <div className={tableExpanded ? "system-node__table" : "system-node__field-list"}>
-                    {tableExpanded && (
-                      <div className="system-node__table-header" style={tableGridStyle}>
-                        <div className="system-node__table-cell system-node__table-cell--name">Field</div>
-                        {tableColumns.map((column) => (
-                          <div
-                            key={column.id}
-                            className="system-node__table-cell system-node__table-cell--header"
-                            title={SCHEMA_SCOPE_LABELS.group.columnTooltip}
-                          >
-                            {column.name}
-                          </div>
-                        ))}
-                        <div className="system-node__table-cell system-node__table-cell--actions" />
-                      </div>
-                    )}
-
-                    {section.showHeader && sectionFields.length === 0 && (
-                      <p className="system-node__section-empty">No fields in this section</p>
-                    )}
-
-                    {sectionFields.map((field) => (
-                      <FieldRow
-                        key={field.id}
-                        nodeId={id}
-                        field={field}
-                        variant={tableExpanded ? "expanded" : "compact"}
-                        tableGridStyle={tableGridStyle}
-                        tableColumns={tableColumns}
-                        fieldProperties={fieldProperties}
-                        isActive={activeFieldIds.has(field.id)}
-                        isFaded={fieldLineageActive && !activeFieldIds.has(field.id)}
-                        onFieldSelect={onFieldSelect}
-                        onDeleteField={onDeleteField}
-                        onFieldConnectDrop={onFieldConnectDrop}
-                      />
-                    ))}
-                  </div>
+                  {renderFieldList(sectionFields)}
                 </div>
               );
             })}
