@@ -3,7 +3,7 @@ import type { Node } from "reactflow";
 import type { Schema, MetadataValues } from "@/lib/storage";
 import type { SystemNodeData } from "@/components/nodes/SystemNode";
 import { formatFieldCellValue, getFieldTableColumns } from "@/lib/fieldMetadata";
-import { getScopedProperties } from "@/lib/schemaProperties";
+import { getFieldProperties } from "@/lib/schemaProperties";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import { BookOpen } from "lucide-react";
 
@@ -94,7 +94,7 @@ export function GlossaryView({ nodes, schema }: GlossaryViewProps) {
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-8">
         {grouped.map((group) => {
           const columns = getFieldTableColumns(schema, group.groupId);
-          const properties = getScopedProperties(schema, group.groupId);
+          const fieldProperties = getFieldProperties(schema, group.groupId);
           const gridTemplate = `minmax(140px, 1.2fr) minmax(120px, 1fr) ${columns
             .map(() => "minmax(100px, 1fr)")
             .join(" ")}`;
@@ -116,14 +116,8 @@ export function GlossaryView({ nodes, schema }: GlossaryViewProps) {
                   {columns.map((column) => (
                     <div
                       key={column.id}
-                      className={`glossary-table__cell glossary-table__cell--header ${
-                        column.scope === "global" ? "glossary-table__cell--global" : "glossary-table__cell--group"
-                      }`}
-                      title={
-                        column.scope === "global"
-                          ? SCHEMA_SCOPE_LABELS.global.columnTooltip
-                          : SCHEMA_SCOPE_LABELS.group.columnTooltip
-                      }
+                      className="glossary-table__cell glossary-table__cell--header glossary-table__cell--group"
+                      title={SCHEMA_SCOPE_LABELS.group.columnTooltip}
                     >
                       {column.name}
                     </div>
@@ -149,7 +143,7 @@ export function GlossaryView({ nodes, schema }: GlossaryViewProps) {
                         <div className="glossary-table__cell font-medium">{field.fieldName}</div>
                         {columns.map((column) => (
                           <div key={column.id} className="glossary-table__cell text-muted-foreground">
-                            {formatFieldCellValue(field.metadata, column.id, properties)}
+                            {formatFieldCellValue(field.metadata, column.id, fieldProperties)}
                           </div>
                         ))}
                       </div>

@@ -3,7 +3,7 @@ import type { DrawingToolId } from "@/lib/drawingTools";
 
 const DEFAULT_SIZES: Record<"textbox" | "sticky", { width: number; height: number }> = {
   textbox: { width: 200, height: 72 },
-  sticky: { width: 200, height: 150 },
+  sticky: { width: 220, height: 170 },
 };
 
 export function createDrawingNode(
@@ -23,15 +23,18 @@ export function createDrawingNode(
     };
   }
 
-  return {
-    id: nextId(),
-    type: "shapeNode",
-    position,
-    style: { width: size.width, height: size.height },
-    data: {
-      content: "Note...",
-      variant: "sticky",
-      color: "#fef08a",
-    },
-  };
+  if (tool === "sticky") {
+    return {
+      id: nextId(),
+      type: "stickyNote",
+      position,
+      style: { width: size.width, height: size.height },
+      data: {
+        content: "Note...",
+        variant: "yellow",
+      },
+    };
+  }
+
+  throw new Error(`Unsupported drawing tool: ${tool}`);
 }

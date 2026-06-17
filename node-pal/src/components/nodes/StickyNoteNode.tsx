@@ -1,95 +1,108 @@
 import { memo, useState } from "react";
-import { Handle, Position, type NodeProps } from "reactflow";
-import { Pencil, Trash2 } from "lucide-react";
+import { NodeResizer, type NodeProps } from "reactflow";
 import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
+
+export type StickyNoteVariant = "yellow" | "teal";
 
 export type StickyNoteData = {
   content: string;
+  variant?: StickyNoteVariant;
+  /** @deprecated legacy color field */
   color?: string;
+};
+
+const VARIANTS: Record<StickyNoteVariant, { label: string }> = {
+  yellow: { label: "Yellow" },
+  teal: { label: "Teal" },
 };
 
 function StickyNoteImpl({ id, data, selected }: NodeProps<StickyNoteData>) {
   const { onDeleteNode, onUpdateStickyNoteData } = useNodeCanvas();
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState(data.content || "");
+  const variant: StickyNoteVariant = data.variant ?? (data.color === "#ccfbf1" ? "teal" : "yellow");
 
-  const stopPointer = (e: React.PointerEvent) => {
-    e.stopPropagation();
+  const stopPointer = (event: React.PointerEvent | React.MouseEvent) => {
+    event.stopPropagation();
   };
 
   const handleSave = () => {
     const next = content.trim() || "New note...";
     setContent(next);
-    onUpdateStickyNoteData(id, (d) => ({ ...d, content: next }));
+    onUpdateStickyNoteData(id, (current) => ({ ...current, content: next, variant }));
     setEditing(false);
   };
 
-  return (
-    <div
-      className={`sticky-note ${selected ? "sticky-note--selected" : ""}`}
-      style={{
-        backgroundColor: data.color || "#fef08a",
-        width: 200,
-        minHeight: 150,
-        padding: 12,
-        borderRadius: 4,
-        boxShadow: selected ? "0 0 0 2px #3b82f6, 2px 2px 8px rgba(0,0,0,0.15)" : "2px 2px 8px rgba(0,0,0,0.1)",
-        transform: "rotate(-1deg)",
-      }}
-    >
-      <Handle type="target" position={Position.Top} className="sticky-note__handle" />
-      <Handle type="source" position={Position.Bottom} className="sticky-note__handle" />
+  const cycleVariant = () => {
+    const nextVariant: StickyNoteVariant = variant === "yellow" ? "teal" : "yellow";
+    onUpdateStickyNoteData(id, (current) => ({ ...current, variant: nextVariant }));
+  };
 
-      <div className="flex justify-end gap-1 mb-2 nodrag nopan" onPointerDown={stopPointer}>
+  return (
+    <>
+      <NodeResizer
+        isVisible={selected}
+        minWidth={140}
+        minHeight={110}
+        lineClassName="sticky-note__resizer-line"
+        handleClassName="sticky-note__resizer-handle"
+      />
+      <div
+        className={`sticky-note sticky-note--${variant} ${selected ? "sticky-note--selected" : ""}`}
+        style={{ width: "100%", height: "100%" }}
+      >
+        <div className="sticky-note__curl" aria-hidden />
+
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setEditing(!editing);
-          }}
-          className="p-1 hover:bg-black/10 rounded nodrag nopan"
-          title="Edit note"
-        >
-          <Pencil className="h-3 w-3" />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
+          className="sticky-note__delete nodrag nopan"
+          onPointerDown={stopPointer}
+          onClick={(event) => {
+            event.stopPropagation();
             onDeleteNode(id);
           }}
-          className="p-1 hover:bg-black/10 rounded nodrag nopan text-red-700/80 hover:text-red-700"
           title="Delete note"
+          aria-label="Delete note"
         >
-          <Trash2 className="h-3 w-3" />
+          ×
         </button>
-      </div>
 
-      {editing ? (
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          onBlur={handleSave}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              setContent(data.content || "");
-              setEditing(false);
-            }
+        <button
+          type="button"
+          className="sticky-note__color-toggle nodrag nopan"
+          onPointerDown={stopPointer}
+          onClick={(event) => {
+            event.stopPropagation();
+            cycleVariant();
           }}
-          autoFocus
-          className="w-full h-32 bg-transparent border-none resize-none text-sm focus:outline-none nodrag nopan nowheel"
-          style={{ fontFamily: "Comic Sans MS, cursive, sans-serif" }}
+          title={`Switch to ${variant === "yellow" ? VARIANTS.teal.label : VARIANTS.yellow.label}`}
+          aria-label="Change note color"
         />
-      ) : (
-        <div
-          className="text-sm whitespace-pre-wrap"
-          style={{ fontFamily: "Comic Sans MS, cursive, sans-serif" }}
-          onDoubleClick={() => setEditing(true)}
-        >
-          {content || "Double-click to edit..."}
-        </div>
-      )}
-    </div>
+
+        {editing ? (
+          <textarea
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            onBlur={handleSave}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setContent(data.content || "");
+                setEditing(false);
+              }
+            }}
+            autoFocus
+            className="sticky-note__textarea nodrag nopan nowheel"
+            onPointerDown={stopPointer}
+          />
+        ) : (
+          <div className="sticky-note__content" onDoubleClick={() => setEditing(true)}>
+            {content || "Double-click to edit..."}
+          </div>
+        )}
+
+        <span className="sticky-note__resize-grip nodrag nopan" aria-hidden />
+      </div>
+    </>
   );
 }
 

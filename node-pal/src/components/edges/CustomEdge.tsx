@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useCallback, useMemo, useRef } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -8,19 +8,21 @@ import {
   useReactFlow,
   type EdgeProps,
 } from "reactflow";
-import { X, Edit2, Check } from "lucide-react";
-import { buildMarker, EDGE_MARKER_OPTIONS, type EdgeMarkerStyle } from "@/lib/edgeMarkers";
+import { Plus } from "lucide-react";
+import { buildMarker } from "@/lib/edgeMarkers";
+import {
+  buildFlexiblePath,
+  getPathMidpoint,
+  resolveControlPoints,
+  type FlowPoint,
+} from "@/lib/edgePath";
 import type { EdgeData, EdgePathType } from "@/lib/storage";
 
 export type CustomEdgeData = EdgeData;
 
-const PATH_TYPE_OPTIONS: { id: EdgePathType; label: string }[] = [
-  { id: "bezier", label: "Bezier" },
-  { id: "straight", label: "Straight" },
-  { id: "step", label: "Step" },
-];
+const SMOOTH_STEP_RADIUS = 16;
 
-function getEdgePath(
+function getAutomaticEdgePath(
   pathType: EdgePathType,
   params: {
     sourceX: number;
@@ -46,7 +48,7 @@ function getEdgePath(
       targetX,
       targetY,
       targetPosition,
-      borderRadius: 0,
+      borderRadius: SMOOTH_STEP_RADIUS,
     });
     return [path, labelX, labelY];
   }
@@ -77,20 +79,51 @@ function CustomEdgeImpl({
   markerStart,
   markerEnd,
 }: EdgeProps<CustomEdgeData>) {
-  const { setEdges } = useReactFlow();
-  const [isEditing, setIsEditing] = useState(false);
-  const [labelText, setLabelText] = useState(data?.label || "");
+  const { setEdges, screenToFlowPosition } = useReactFlow();
+  const draggingRef = useRef(false);
 
-  const pathType = data?.pathType ?? "bezier";
+  const pathType = data?.pathType ?? "step";
   const lineStyle = data?.lineStyle ?? "solid";
-  const [edgePath, labelX, labelY] = getEdgePath(pathType, {
+  const source: FlowPoint = { x: sourceX, y: sourceY };
+  const target: FlowPoint = { x: targetX, y: targetY };
+
+  const usesCustomPath =
+    pathType === "custom" || (pathType === "bezier" && Boolean(data?.controlPoints?.length));
+
+  const controlPoints = useMemo(
+    () => resolveControlPoints(source, target, data?.controlPoints),
+    [source.x, source.y, target.x, target.y, data?.controlPoints],
+  );
+
+  const [edgePath, labelX, labelY] = useMemo(() => {
+    if (usesCustomPath) {
+      const path = buildFlexiblePath(source, controlPoints, target);
+      const midpoint = getPathMidpoint(source, target, controlPoints);
+      return [path, midpoint.x, midpoint.y] as const;
+    }
+
+    const [path, lx, ly] = getAutomaticEdgePath(pathType, {
+      sourceX,
+      sourceY,
+      targetX,
+      targetY,
+      sourcePosition,
+      targetPosition,
+    });
+    return [path, lx, ly] as const;
+  }, [
+    usesCustomPath,
+    controlPoints,
+    source,
+    target,
+    pathType,
     sourceX,
     sourceY,
     targetX,
     targetY,
     sourcePosition,
     targetPosition,
-  });
+  ]);
 
   const isLineage = animated || className?.includes("edge-lineage");
   const strokeColor = isLineage
@@ -99,7 +132,7 @@ function CustomEdgeImpl({
       ? "#f97316"
       : selected
         ? "#2563eb"
-        : "#3b82f6";
+        : "#64748b";
 
   const edgeStyle = {
     stroke: strokeColor,
@@ -109,73 +142,77 @@ function CustomEdgeImpl({
       : data?.rerouted
         ? "5,5"
         : lineStyle === "dashed"
-          ? "8 6"
-          : selected
-            ? "10,5"
-            : undefined,
-    animation: isLineage ? "lineage-dash 1s linear infinite" : selected ? "dash 1s linear infinite" : undefined,
+          ? "10 8"
+          : "7 9",
+    animation: isLineage ? "lineage-dash 1s linear infinite" : "edge-flow 1.4s linear infinite",
+    transition: draggingRef.current ? "none" : "d 0.18s ease",
   };
 
-  const resolvedMarkerStart =
-    markerStart ?? buildMarker(data?.markerStart ?? "none", strokeColor);
-  const resolvedMarkerEnd =
-    markerEnd ?? buildMarker(data?.markerEnd ?? "arrowclosed", strokeColor);
+  const resolvedMarkerStart = markerStart ?? buildMarker(data?.markerStart ?? "none", strokeColor);
+  const resolvedMarkerEnd = markerEnd ?? buildMarker(data?.markerEnd ?? "arrowclosed", strokeColor);
+  const labelText = data?.label?.trim() ?? "";
 
-  const updateEdge = (patch: Partial<CustomEdgeData>, markerPatch?: Partial<Pick<EdgeProps, "markerStart" | "markerEnd">>) => {
-    setEdges((edges) =>
-      edges.map((e) => {
-        if (e.id !== id) return e;
-        const nextData = { ...e.data, ...patch };
-        const nextStroke = strokeColor;
-        const nextMarkers: Partial<EdgeProps> = {};
-        if (markerPatch?.markerStart !== undefined) {
-          nextMarkers.markerStart = markerPatch.markerStart;
-        }
-        if (markerPatch?.markerEnd !== undefined) {
-          nextMarkers.markerEnd = markerPatch.markerEnd;
-        }
-        if (patch.markerStart !== undefined) {
-          nextMarkers.markerStart = buildMarker(patch.markerStart, nextStroke);
-        }
-        if (patch.markerEnd !== undefined) {
-          nextMarkers.markerEnd = buildMarker(patch.markerEnd, nextStroke);
-        }
-        return { ...e, ...nextMarkers, data: nextData };
-      }),
-    );
+  const updateControlPoints = useCallback(
+    (nextPoints: FlowPoint[], nextPathType: EdgePathType = "custom") => {
+      setEdges((edges) =>
+        edges.map((edge) =>
+          edge.id === id
+            ? {
+                ...edge,
+                data: {
+                  ...edge.data,
+                  pathType: nextPathType,
+                  controlPoints: nextPoints,
+                },
+              }
+            : edge,
+        ),
+      );
+    },
+    [id, setEdges],
+  );
+
+  const addMidControlPoint = useCallback(() => {
+    const midpoint = getPathMidpoint(source, target, controlPoints);
+    updateControlPoints([...controlPoints, midpoint], "custom");
+  }, [controlPoints, source, target, updateControlPoints]);
+
+  const onControlPointPointerDown = (index: number, event: React.PointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    event.preventDefault();
+    draggingRef.current = true;
+
+    const targetElement = event.currentTarget;
+    targetElement.setPointerCapture(event.pointerId);
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const position = screenToFlowPosition({ x: moveEvent.clientX, y: moveEvent.clientY });
+      setEdges((edges) =>
+        edges.map((edge) => {
+          if (edge.id !== id) return edge;
+          const points = resolveControlPoints(source, target, edge.data?.controlPoints);
+          const next = [...points];
+          next[index] = position;
+          return {
+            ...edge,
+            data: { ...edge.data, pathType: "custom", controlPoints: next },
+          };
+        }),
+      );
+    };
+
+    const handleUp = () => {
+      draggingRef.current = false;
+      targetElement.releasePointerCapture(event.pointerId);
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
   };
 
-  const handleDelete = () => {
-    setEdges((edges) => edges.filter((e) => e.id !== id));
-  };
-
-  const handleLabelSave = () => {
-    updateEdge({ label: labelText });
-    setIsEditing(false);
-  };
-
-  const handleLabelCancel = () => {
-    setLabelText(data?.label || "");
-    setIsEditing(false);
-  };
-
-  const setMarker = (which: "markerStart" | "markerEnd", value: EdgeMarkerStyle) => {
-    const built = buildMarker(value, strokeColor);
-    setEdges((edges) =>
-      edges.map((e) => {
-        if (e.id !== id) return e;
-        return {
-          ...e,
-          [which]: built,
-          data: { ...e.data, [which]: value },
-        };
-      }),
-    );
-  };
-
-  const setPathType = (value: EdgePathType) => {
-    updateEdge({ pathType: value });
-  };
+  const showControlPoints = selected && !isLineage;
 
   return (
     <>
@@ -185,131 +222,57 @@ function CustomEdgeImpl({
         markerStart={resolvedMarkerStart}
         markerEnd={resolvedMarkerEnd}
         interactionWidth={20}
+        className={selected ? "custom-edge--selected" : undefined}
       />
-      <EdgeLabelRenderer>
-        <div
-          style={{
-            position: "absolute",
-            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-            pointerEvents: "all",
-          }}
-          className="nodrag nopan nowheel"
-        >
-          <div className="flex flex-col items-center gap-1">
-            {selected && (
-              <div className="edge-marker-panel nodrag nopan nowheel">
-                <div className="edge-marker-panel__row">
-                  <span>Path</span>
-                  <select
-                    value={pathType}
-                    onChange={(e) => setPathType(e.target.value as EdgePathType)}
-                    className="edge-marker-panel__select"
-                  >
-                    {PATH_TYPE_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="edge-marker-panel__row">
-                  <span>Start</span>
-                  <select
-                    value={data?.markerStart ?? "none"}
-                    onChange={(e) => setMarker("markerStart", e.target.value as EdgeMarkerStyle)}
-                    className="edge-marker-panel__select"
-                  >
-                    {EDGE_MARKER_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="edge-marker-panel__row">
-                  <span>End</span>
-                  <select
-                    value={data?.markerEnd ?? "arrowclosed"}
-                    onChange={(e) => setMarker("markerEnd", e.target.value as EdgeMarkerStyle)}
-                    className="edge-marker-panel__select"
-                  >
-                    {EDGE_MARKER_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              {isEditing ? (
-                <>
-                  <input
-                    autoFocus
-                    value={labelText}
-                    onChange={(e) => setLabelText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleLabelSave();
-                      if (e.key === "Escape") handleLabelCancel();
-                    }}
-                    className="bg-background border border-border rounded px-2 py-1 text-sm w-32"
-                    placeholder="Add label..."
-                  />
-                  <button
-                    type="button"
-                    onClick={handleLabelSave}
-                    className="flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-white hover:bg-green-600"
-                    title="Save"
-                  >
-                    <Check className="h-3 w-3" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleLabelCancel}
-                    className="flex h-5 w-5 items-center justify-center rounded-full bg-gray-500 text-white hover:bg-gray-600"
-                    title="Cancel"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </>
-              ) : (
-                <>
-                  {labelText && (
-                    <span
-                      className="bg-background border border-border rounded px-2 py-1 text-xs font-medium"
-                      onDoubleClick={() => setIsEditing(true)}
-                    >
-                      {labelText}
-                    </span>
-                  )}
-                  {selected && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setIsEditing(true)}
-                        className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-white hover:bg-blue-600"
-                        title="Edit label"
-                      >
-                        <Edit2 className="h-3 w-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleDelete}
-                        className="flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-600"
-                        title="Delete edge"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
+      {showControlPoints && (
+        <EdgeLabelRenderer>
+          {controlPoints.map((point, index) => (
+            <button
+              key={`${id}-cp-${index}`}
+              type="button"
+              className="edge-control-point nodrag nopan"
+              style={{
+                position: "absolute",
+                transform: `translate(-50%, -50%) translate(${point.x}px, ${point.y}px)`,
+                pointerEvents: "all",
+              }}
+              onPointerDown={(event) => onControlPointPointerDown(index, event)}
+              aria-label={`Adjust connection bend ${index + 1}`}
+            />
+          ))}
+          <button
+            type="button"
+            className="edge-control-point edge-control-point--add nodrag nopan"
+            style={{
+              position: "absolute",
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              pointerEvents: "all",
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+              addMidControlPoint();
+            }}
+            title="Add bend point"
+            aria-label="Add bend point"
+          >
+            <Plus className="h-3 w-3" />
+          </button>
+        </EdgeLabelRenderer>
+      )}
+      {labelText && (
+        <EdgeLabelRenderer>
+          <div
+            style={{
+              position: "absolute",
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              pointerEvents: "none",
+            }}
+            className="edge-label-chip"
+          >
+            {labelText}
           </div>
-        </div>
-      </EdgeLabelRenderer>
+        </EdgeLabelRenderer>
+      )}
     </>
   );
 }

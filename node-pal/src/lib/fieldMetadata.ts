@@ -1,10 +1,10 @@
 import type { MetadataValues, PropertyDefinition, Schema } from "@/lib/storage";
-import { getScopedProperties } from "@/lib/schemaProperties";
+import { getFieldProperties } from "@/lib/schemaProperties";
 
 export type FieldTableColumn = {
   id: string;
   name: string;
-  scope: "global" | "group";
+  scope: "group";
 };
 
 export function getFieldTableColumns(
@@ -12,10 +12,10 @@ export function getFieldTableColumns(
   nodeGroupId: string | undefined,
   visibleColumns: string[] | undefined,
 ): FieldTableColumn[] {
-  const allColumns = getScopedProperties(schema, nodeGroupId).map((property) => ({
+  const allColumns = getFieldProperties(schema, nodeGroupId).map((property) => ({
     id: property.id,
     name: property.name,
-    scope: property.scope,
+    scope: "group" as const,
   }));
 
   if (!visibleColumns?.length) {

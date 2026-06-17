@@ -15,7 +15,7 @@ import type { MetadataValues } from "@/lib/storage";
 import { useLineage } from "@/contexts/LineageContext";
 import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
 import { formatFieldCellValue, getFieldTableColumns } from "@/lib/fieldMetadata";
-import { getScopedProperties } from "@/lib/schemaProperties";
+import { getNodeGroupProperties, getFieldProperties } from "@/lib/schemaProperties";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import { getNodeMetadataDisplayItems } from "@/lib/nodeMetadataDisplay";
 import {
@@ -78,8 +78,9 @@ function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
   const fieldLineageActive = hasLineage;
   const activeFieldIds = activeFieldIdsByNode.get(id) ?? new Set<string>();
   const tableColumns = getFieldTableColumns(schema, data.nodeGroupId, data.visibleColumns);
-  const scopedProperties = getScopedProperties(schema, data.nodeGroupId);
-  const nodeMetadataItems = getNodeMetadataDisplayItems(data.metadata, scopedProperties);
+  const nodeGroupProperties = getNodeGroupProperties(schema);
+  const fieldProperties = getFieldProperties(schema, data.nodeGroupId);
+  const nodeMetadataItems = getNodeMetadataDisplayItems(data.metadata, nodeGroupProperties);
 
   const [showSettings, setShowSettings] = useState(false);
   const [newField, setNewField] = useState("");
@@ -405,14 +406,8 @@ function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
                         {tableColumns.map((column) => (
                           <div
                             key={column.id}
-                            className={`system-node__table-cell system-node__table-cell--header ${
-                              column.scope === "global" ? "system-node__table-cell--global" : ""
-                            }`}
-                            title={
-                              column.scope === "global"
-                                ? SCHEMA_SCOPE_LABELS.global.columnTooltip
-                                : SCHEMA_SCOPE_LABELS.group.columnTooltip
-                            }
+                            className="system-node__table-cell system-node__table-cell--header"
+                            title={SCHEMA_SCOPE_LABELS.group.columnTooltip}
                           >
                             {column.name}
                           </div>
@@ -433,7 +428,7 @@ function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
                         variant={tableExpanded ? "expanded" : "compact"}
                         tableGridStyle={tableGridStyle}
                         tableColumns={tableColumns}
-                        scopedProperties={scopedProperties}
+                        fieldProperties={fieldProperties}
                         isActive={activeFieldIds.has(field.id)}
                         isFaded={fieldLineageActive && !activeFieldIds.has(field.id)}
                         onFieldSelect={onFieldSelect}
@@ -504,7 +499,7 @@ type FieldRowProps = {
   variant: "compact" | "expanded";
   tableGridStyle: React.CSSProperties;
   tableColumns: ReturnType<typeof getFieldTableColumns>;
-  scopedProperties: ReturnType<typeof getScopedProperties>;
+  fieldProperties: ReturnType<typeof getFieldProperties>;
   isActive: boolean;
   isFaded: boolean;
   onFieldSelect: (nodeId: string, fieldId: string) => void;
@@ -512,7 +507,6 @@ type FieldRowProps = {
   onFieldConnectDrop: (
     source: { nodeId: string; fieldId: string },
     target: { nodeId: string; fieldId: string },
-    position: { x: number; y: number },
   ) => void;
 };
 
@@ -543,7 +537,7 @@ function FieldRow({
   variant,
   tableGridStyle,
   tableColumns,
-  scopedProperties,
+  fieldProperties,
   isActive,
   isFaded,
   onFieldSelect,
@@ -593,7 +587,6 @@ function FieldRow({
     onFieldConnectDrop(
       { nodeId: source.sourceNodeId, fieldId: source.sourceFieldId },
       { nodeId, fieldId: field.id },
-      { x: e.clientX, y: e.clientY },
     );
   };
 
@@ -640,11 +633,9 @@ function FieldRow({
       {tableColumns.map((column) => (
         <div
           key={`${field.id}-${column.id}`}
-          className={`system-node__table-cell ${
-            column.scope === "global" ? "system-node__table-cell--global" : ""
-          }`}
+          className="system-node__table-cell"
         >
-          {formatFieldCellValue(field.metadata, column.id, scopedProperties)}
+          {formatFieldCellValue(field.metadata, column.id, fieldProperties)}
         </div>
       ))}
       <div className="system-node__table-cell system-node__table-cell--actions nodrag nopan">

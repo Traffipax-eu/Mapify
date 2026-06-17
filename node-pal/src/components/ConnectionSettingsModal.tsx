@@ -1,15 +1,10 @@
 import { useState } from "react";
 import { ArrowLeft, ArrowRight, ArrowLeftRight, Minus, Spline, CornerDownRight, MoveHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { EdgePathType, EdgeLineStyle } from "@/lib/storage";
+import type { ConnectionSettings } from "@/lib/connectionSettings";
+import { DEFAULT_CONNECTION_SETTINGS } from "@/lib/connectionSettings";
 
-export type ConnectionDirection = "source-to-target" | "target-to-source" | "bidirectional" | "none";
-
-export type ConnectionSettings = {
-  direction: ConnectionDirection;
-  pathType: EdgePathType;
-  lineStyle: EdgeLineStyle;
-};
+import type { ConnectionSettings } from "@/lib/connectionSettings";
 
 type Props = {
   position: { x: number; y: number };
@@ -17,11 +12,7 @@ type Props = {
   onCancel: () => void;
 };
 
-const DEFAULT_SETTINGS: ConnectionSettings = {
-  direction: "source-to-target",
-  pathType: "bezier",
-  lineStyle: "solid",
-};
+const DEFAULT_SETTINGS: ConnectionSettings = DEFAULT_CONNECTION_SETTINGS;
 
 function OptionGroup<T extends string>({
   label,

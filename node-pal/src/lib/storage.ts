@@ -41,8 +41,10 @@ export type MetadataValues = Record<string, any>;
 // Edge data structure for field-to-field connections
 export type EdgeMarkerStyle = "none" | "arrow" | "arrowclosed" | "circle" | "circleclosed";
 
-export type EdgePathType = "bezier" | "straight" | "step";
+export type EdgePathType = "bezier" | "straight" | "step" | "custom";
 export type EdgeLineStyle = "solid" | "dashed";
+
+export type EdgeControlPoint = { x: number; y: number };
 
 export interface EdgeData {
   sourceFieldId?: string | null;
@@ -50,6 +52,7 @@ export interface EdgeData {
   sourceNodeId?: string;
   targetNodeId?: string;
   label?: string;
+  description?: string;
   pathType?: EdgePathType;
   lineStyle?: EdgeLineStyle;
   markerStart?: EdgeMarkerStyle;
@@ -57,6 +60,8 @@ export interface EdgeData {
   rerouted?: boolean;
   originalSource?: string;
   originalTarget?: string;
+  /** Flow-coordinate control points for custom / bendable Bézier paths */
+  controlPoints?: EdgeControlPoint[];
 }
 
 // Graph State (nodes now use dynamic metadata)

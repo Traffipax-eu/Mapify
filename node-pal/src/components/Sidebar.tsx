@@ -9,12 +9,14 @@ import {
   StickyNote,
   ChevronDown,
   ChevronRight,
+  Box,
 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { Schema, NodeGroupSchema } from "@/lib/storage";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import type { Dispatch, SetStateAction } from "react";
 import { DRAWING_TOOLS, type DrawingToolId } from "@/lib/drawingTools";
+import { CUSTOM_OBJECTS, type CustomObjectId } from "@/lib/customObjects";
 
 interface Props {
   schema: Schema;
@@ -26,10 +28,12 @@ interface Props {
 const TOOL_ICONS: Record<DrawingToolId, typeof Type> = {
   textbox: Type,
   sticky: StickyNote,
+  container: Box,
 };
 
 export function Sidebar({ schema, onUpdateSchema, onOpenSchemaBuilder, onDeleteGroup }: Props) {
   const [toolsOpen, setToolsOpen] = useState(true);
+  const [objectsOpen, setObjectsOpen] = useState(true);
 
   const addGroup = () => {
     const newGroup: NodeGroupSchema = {
@@ -92,10 +96,25 @@ export function Sidebar({ schema, onUpdateSchema, onOpenSchemaBuilder, onDeleteG
             ))}
           </CollapsibleContent>
         </Collapsible>
+
+        <Collapsible open={objectsOpen} onOpenChange={setObjectsOpen} className="mt-2 border-t border-sidebar-border pt-4">
+          <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 rounded-lg px-1 py-2 text-sm font-semibold hover:bg-accent/50 transition">
+            <span className="flex items-center gap-2">
+              <Database className="h-4 w-4" />
+              Custom Objects
+            </span>
+            {objectsOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-2 grid grid-cols-2 gap-2">
+            {CUSTOM_OBJECTS.map((object) => (
+              <CustomObjectCard key={object.id} objectId={object.id} label={object.label} description={object.description} icon={object.icon} accent={object.accent} />
+            ))}
+          </CollapsibleContent>
+        </Collapsible>
       </div>
 
       <div className="mt-auto border-t border-sidebar-border p-4 text-xs text-muted-foreground">
-        Drag node groups or drawing tools onto the canvas.
+        Drag node groups, drawing tools, or custom objects onto the canvas.
       </div>
     </aside>
   );
@@ -203,6 +222,45 @@ function DrawingToolCard({
     >
       <div className="flex h-9 w-9 items-center justify-center rounded-md border border-dashed border-muted-foreground/40 bg-muted/30">
         <Icon className="h-4 w-4 text-foreground" />
+      </div>
+      <span className="text-[11px] font-medium leading-tight">{label}</span>
+    </div>
+  );
+}
+
+function CustomObjectCard({
+  objectId,
+  label,
+  description,
+  icon: Icon,
+  accent,
+}: {
+  objectId: CustomObjectId;
+  label: string;
+  description: string;
+  icon: typeof Database;
+  accent: string;
+}) {
+  const onDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData(
+      "application/reactflow",
+      JSON.stringify({ kind: "custom-object", objectId }),
+    );
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      title={description}
+      className="flex flex-col items-center gap-1.5 rounded-lg border border-border bg-background/80 p-3 text-center transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm cursor-grab active:cursor-grabbing"
+    >
+      <div
+        className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted/30"
+        style={{ borderColor: `${accent}55`, color: accent }}
+      >
+        <Icon className="h-4 w-4" />
       </div>
       <span className="text-[11px] font-medium leading-tight">{label}</span>
     </div>

@@ -4,14 +4,17 @@ import ReactFlow, {
   Controls,
   MiniMap,
   addEdge,
+  applyNodeChanges,
   ConnectionMode,
   MarkerType,
   SelectionMode,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   type Connection,
   type Edge,
   type Node,
+  type NodeChange,
   type OnEdgesDelete,
   type OnNodesDelete,
   type ReactFlowInstance,
@@ -28,11 +31,13 @@ import { TouchpointNode } from "./nodes/TouchpointNode";
 import { StickyNoteNode } from "./nodes/StickyNoteNode";
 import { TextNode } from "./nodes/TextNode";
 import { ShapeNode } from "./nodes/ShapeNode";
+import { ContainerNode } from "./nodes/ContainerNode";
+import { CustomObjectNode } from "./nodes/CustomObjectNode";
 import { MetadataSidebar } from "./MetadataSidebar";
+import { EdgeSettingsPanel, applyConnectionSettingsToEdge } from "./EdgeSettingsPanel";
 import { SchemaBuilder } from "./SchemaBuilder";
 import { GlossaryView } from "./GlossaryView";
 import { CustomEdge } from "./edges/CustomEdge";
-import { ConnectionSettingsModal, type ConnectionSettings } from "./ConnectionSettingsModal";
 import { ClearCanvasDialog } from "./ClearCanvasDialog";
 import { EncryptionModal, type EncryptionModalMode } from "./EncryptionModal";
 import { FileMenu } from "./FileMenu";
@@ -59,9 +64,20 @@ import { decryptData, prepareEncryptedCloudPayload } from "@/utils/encryption";
 import { LineageProvider, type LineageContextValue } from "@/contexts/LineageContext";
 import { NodeCanvasProvider, type NodeCanvasContextValue } from "@/contexts/NodeCanvasContext";
 import { buildMarker } from "@/lib/edgeMarkers";
-import { getScopedProperties, normalizeSchema } from "@/lib/schemaProperties";
+import { getNodeGroupProperties, getFieldProperties, pickMetadataForProperties, normalizeSchema } from "@/lib/schemaProperties";
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
 import { createDrawingNode } from "@/lib/createDrawingNode";
+import { createContainerNode } from "@/lib/createContainerNode";
+import { createCustomObjectNode } from "@/lib/createCustomObjectNode";
+import { isCustomObjectPayload } from "@/lib/customObjects";
+import {
+  assignNodeParent,
+  detachChildrenBeforeContainerDelete,
+  isContainerNode,
+  pickInnermostContainer,
+  sortNodesParentFirst,
+} from "@/lib/containerUtils";
+import { DEFAULT_CONNECTION_SETTINGS, type ConnectionSettings } from "@/lib/connectionSettings";
 import { normalizeConnection, type NormalizedConnection } from "@/lib/connectionUtils";
 
 let nodeIdCounter = 1;
@@ -73,6 +89,8 @@ const nodeTypes = {
   stickyNote: StickyNoteNode,
   textNode: TextNode,
   shapeNode: ShapeNode,
+  container: ContainerNode,
+  customObject: CustomObjectNode,
 };
 
 const edgeTypes = {
@@ -99,7 +117,7 @@ function InnerCanvas() {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [nodes, setNodes, onNodesChangeBase] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [schema, setSchema] = useState<Schema>(DEFAULT_SCHEMA);
   const [hydrated, setHydrated] = useState(false);
@@ -127,8 +145,9 @@ function InnerCanvas() {
   const [isSaving, setIsSaving] = useState(false);
   const [isVisualExporting, setIsVisualExporting] = useState(false);
   const pendingViewportRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
-  const [pendingConnection, setPendingConnection] = useState<NormalizedConnection | null>(null);
-  const [connectionModalPos, setConnectionModalPos] = useState<{ x: number; y: number } | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [edgeSettingsOpen, setEdgeSettingsOpen] = useState(false);
+  const { getIntersectingNodes } = useReactFlow();
   const connectEndPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const lastPointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const [encryptionModalOpen, setEncryptionModalOpen] = useState(false);
@@ -319,8 +338,28 @@ function InnerCanvas() {
     return () => window.removeEventListener("resize", resizeCanvas);
   }, [drawingMode]);
 
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      const removals = changes
+        .filter((change): change is NodeChange & { type: "remove"; id: string } => change.type === "remove")
+        .map((change) => change.id);
+
+      if (removals.length > 0) {
+        setNodes((current) => {
+          const detached = detachChildrenBeforeContainerDelete(current, new Set(removals));
+          const next = applyNodeChanges(changes, detached);
+          return sortNodesParentFirst(next);
+        });
+        return;
+      }
+
+      onNodesChangeBase(changes);
+    },
+    [onNodesChangeBase, setNodes],
+  );
+
   const createEdgeFromConnection = useCallback(
-    (conn: NormalizedConnection, settings: ConnectionSettings) => {
+    (conn: NormalizedConnection, settings: ConnectionSettings = DEFAULT_CONNECTION_SETTINGS) => {
       const strokeColor = "#3b82f6";
       let markerStartStyle: "none" | "arrowclosed" = "none";
       let markerEndStyle: "none" | "arrowclosed" = "none";
@@ -340,7 +379,6 @@ function InnerCanvas() {
         target: conn.targetNodeId,
         sourceHandle: conn.sourceHandle,
         targetHandle: conn.targetHandle,
-        animated: true,
         type: "custom",
         markerStart: buildMarker(markerStartStyle, strokeColor),
         markerEnd: buildMarker(markerEndStyle, strokeColor),
@@ -350,6 +388,7 @@ function InnerCanvas() {
           sourceNodeId: conn.sourceNodeId,
           targetNodeId: conn.targetNodeId,
           label: "",
+          description: "",
           pathType: settings.pathType,
           lineStyle: settings.lineStyle,
           markerStart: markerStartStyle,
@@ -385,13 +424,12 @@ function InnerCanvas() {
     (
       source: { nodeId: string; fieldId: string },
       target: { nodeId: string; fieldId: string },
-      position: { x: number; y: number },
     ) => {
       if (source.nodeId === target.nodeId && source.fieldId === target.fieldId) {
         return;
       }
 
-      setPendingConnection({
+      createEdgeFromConnection({
         sourceNodeId: source.nodeId,
         targetNodeId: target.nodeId,
         sourceHandle: `source-${source.fieldId}`,
@@ -401,9 +439,8 @@ function InnerCanvas() {
         isFieldToField: true,
         isParentToParent: false,
       });
-      setConnectionModalPos(position);
     },
-    [],
+    [createEdgeFromConnection],
   );
 
   const onConnect = useCallback(
@@ -418,29 +455,88 @@ function InnerCanvas() {
         return;
       }
 
-      createEdgeFromConnection(conn, {
-        direction: "source-to-target",
-        pathType: "bezier",
-        lineStyle: "solid",
-      });
+      createEdgeFromConnection(conn);
     },
     [createEdgeFromConnection],
   );
 
-  const handleConnectionConfirm = useCallback(
-    (settings: ConnectionSettings) => {
-      if (!pendingConnection) return;
-      createEdgeFromConnection(pendingConnection, settings);
-      setPendingConnection(null);
-      setConnectionModalPos(null);
+  const clearEdgeSelection = useCallback(() => {
+    setSelectedEdgeId(null);
+    setEdgeSettingsOpen(false);
+    setEdges((current) => current.map((edge) => ({ ...edge, selected: false })));
+  }, [setEdges]);
+
+  const openEdgeSettings = useCallback(
+    (edgeId: string) => {
+      setSelectedEdgeId(edgeId);
+      setEdgeSettingsOpen(true);
+      setSidebarOpen(false);
+      setSelectedNodeId(null);
+      setSelectedFieldId(null);
+      setSelectedFieldLabel(null);
+      setSelectedFieldMetadata(null);
+      setSelectedNodeLabel(null);
+      setSelectedNodeMetadata(null);
+      setEdges((current) =>
+        current.map((edge) => ({
+          ...edge,
+          selected: edge.id === edgeId,
+        })),
+      );
     },
-    [pendingConnection, createEdgeFromConnection],
+    [setEdges],
   );
 
-  const handleConnectionCancel = useCallback(() => {
-    setPendingConnection(null);
-    setConnectionModalPos(null);
-  }, []);
+  const onEdgeClick = useCallback(
+    (_event: React.MouseEvent, edge: Edge) => {
+      openEdgeSettings(edge.id);
+    },
+    [openEdgeSettings],
+  );
+
+  const onEdgeDoubleClick = useCallback(
+    (_event: React.MouseEvent, edge: Edge) => {
+      openEdgeSettings(edge.id);
+    },
+    [openEdgeSettings],
+  );
+
+  const handleEdgeUpdate = useCallback(
+    (edgeId: string, settings: ConnectionSettings, label: string, description: string) => {
+      setEdges((current) =>
+        current.map((edge) =>
+          edge.id === edgeId ? applyConnectionSettingsToEdge(edge, settings, label, description) : edge,
+        ),
+      );
+      toast.success("Connection updated");
+    },
+    [setEdges],
+  );
+
+  const handleEdgeDelete = useCallback(
+    (edgeId: string) => {
+      setEdges((current) => current.filter((edge) => edge.id !== edgeId));
+      clearEdgeSelection();
+      toast.success("Connection deleted");
+    },
+    [setEdges, clearEdgeSelection],
+  );
+
+  const onNodeDragStop = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      if (isContainerNode(node)) return;
+
+      setNodes((current) => {
+        const snapshot = current.map((entry) => (entry.id === node.id ? node : entry));
+        const intersections = getIntersectingNodes(node, true, snapshot).filter((entry) => isContainerNode(entry));
+        const container = pickInnermostContainer(intersections);
+        const updated = assignNodeParent(node, container, snapshot);
+        const next = snapshot.map((entry) => (entry.id === node.id ? updated : entry));
+        return sortNodesParentFirst(next);
+      });
+    },
+    [getIntersectingNodes, setNodes],
+  );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -466,16 +562,25 @@ function InnerCanvas() {
       });
 
       if (isDrawingToolPayload(item)) {
-        setNodes((nds) => nds.concat(createDrawingNode(item.tool, position, nextNodeId)));
+        const newNode =
+          item.tool === "container"
+            ? createContainerNode(position, nextNodeId)
+            : createDrawingNode(item.tool, position, nextNodeId);
+        setNodes((nds) => sortNodesParentFirst(nds.concat(newNode)));
         return;
       }
 
       if (isNodeGroupPayload(item)) {
         setPendingNodeDrop({ position, item });
         setNodeNameDialogOpen(true);
+        return;
+      }
+
+      if (isCustomObjectPayload(item)) {
+        setNodes((nds) => nds.concat(createCustomObjectNode(item.objectId, position, nextNodeId)));
       }
     },
-    [rfInstance],
+    [rfInstance, setNodes],
   );
 
   const createNodeFromDrop = useCallback(
@@ -755,7 +860,7 @@ function InnerCanvas() {
         setSelectedFieldId(fieldId);
         setSelectedNodeLabel((node?.data as { label?: string } | undefined)?.label || null);
         setSelectedFieldLabel(field?.label || null);
-        setSelectedNodeMetadata((node?.data as { metadata?: MetadataValues } | undefined)?.metadata || null);
+        setSelectedNodeMetadata(null);
         setSelectedFieldMetadata(field?.metadata || null);
         setSidebarOpen(true);
 
@@ -925,11 +1030,17 @@ function InnerCanvas() {
     [cleanupAfterNodeDelete],
   );
 
-  const onEdgesDelete: OnEdgesDelete = useCallback((deleted) => {
-    if (deleted.length > 1) {
-      toast.success(`Deleted ${deleted.length} connections`);
-    }
-  }, []);
+  const onEdgesDelete: OnEdgesDelete = useCallback(
+    (deleted) => {
+      if (selectedEdgeId && deleted.some((edge) => edge.id === selectedEdgeId)) {
+        clearEdgeSelection();
+      }
+      if (deleted.length > 1) {
+        toast.success(`Deleted ${deleted.length} connections`);
+      }
+    },
+    [selectedEdgeId, clearEdgeSelection],
+  );
 
   const onNodeClick = useCallback(
     (_e: React.MouseEvent, node: Node) => {
@@ -944,10 +1055,13 @@ function InnerCanvas() {
         setLineageAnchor(null);
       }
 
-      if (node.type === "textNode" || node.type === "shapeNode" || node.type === "stickyNote") {
+      if (node.type === "textNode" || node.type === "shapeNode" || node.type === "stickyNote" || node.type === "container" || node.type === "customObject") {
         setSidebarOpen(false);
+        clearEdgeSelection();
         return;
       }
+
+      clearEdgeSelection();
 
       setSelectedNodeId(node.id);
       setSelectedFieldId(null);
@@ -957,17 +1071,22 @@ function InnerCanvas() {
       setSelectedFieldMetadata(null);
       setSidebarOpen(node.type === "system");
     },
-    [],
+    [clearEdgeSelection],
   );
 
-  const selectedNodeProperties = useMemo(() => {
+  const sidebarSelectionContext = selectedFieldId ? ("field" as const) : ("node" as const);
+
+  const selectedSidebarProperties = useMemo(() => {
     if (!selectedNodeId) return [];
     const node = nodes.find((n) => n.id === selectedNodeId);
     if (!node) return [];
 
     const nodeGroupId = (node.data as SystemNodeData)?.nodeGroupId;
-    return getScopedProperties(schema, nodeGroupId);
-  }, [selectedNodeId, nodes, schema]);
+    if (selectedFieldId) {
+      return getFieldProperties(schema, nodeGroupId);
+    }
+    return getNodeGroupProperties(schema);
+  }, [selectedNodeId, selectedFieldId, nodes, schema]);
 
   const handleDeleteGroup = useCallback(
     (groupId: string) => {
@@ -1008,33 +1127,49 @@ function InnerCanvas() {
     [schema.nodeGroups, nodes, cleanupAfterNodeDelete, schemaBuilderFocusGroupId],
   );
 
-  const handleUpdateMetadata = useCallback((nodeId: string, metadata: MetadataValues) => {
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.id === nodeId
-          ? { ...n, data: { ...stripDisplayData(n.data as Record<string, unknown>), metadata } }
-          : n,
-      ),
-    );
-  }, [setNodes]);
+  const handleUpdateMetadata = useCallback(
+    (nodeId: string, metadata: MetadataValues) => {
+      const nodeGroupProps = getNodeGroupProperties(schema);
+      const sanitized = pickMetadataForProperties(metadata, nodeGroupProps);
 
-  const handleUpdateFieldMetadata = useCallback((nodeId: string, fieldId: string, metadata: MetadataValues) => {
-    setNodes((nds) =>
-      nds.map((n) => {
-        if (n.id !== nodeId) return n;
-        const clean = stripDisplayData(n.data as SystemNodeData);
-        return {
-          ...n,
-          data: {
-            ...clean,
-            fields: (clean.fields ?? []).map((field) =>
-              field.id === fieldId ? { ...field, metadata } : field,
-            ),
-          },
-        };
-      }),
-    );
-  }, [setNodes]);
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === nodeId
+            ? { ...n, data: { ...stripDisplayData(n.data as Record<string, unknown>), metadata: sanitized } }
+            : n,
+        ),
+      );
+      setSelectedNodeMetadata(sanitized);
+    },
+    [schema, setNodes],
+  );
+
+  const handleUpdateFieldMetadata = useCallback(
+    (nodeId: string, fieldId: string, metadata: MetadataValues) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      const nodeGroupId = (node?.data as SystemNodeData | undefined)?.nodeGroupId;
+      const fieldProps = getFieldProperties(schema, nodeGroupId);
+      const sanitized = pickMetadataForProperties(metadata, fieldProps);
+
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== nodeId) return n;
+          const clean = stripDisplayData(n.data as SystemNodeData);
+          return {
+            ...n,
+            data: {
+              ...clean,
+              fields: (clean.fields ?? []).map((field) =>
+                field.id === fieldId ? { ...field, metadata: sanitized } : field,
+              ),
+            },
+          };
+        }),
+      );
+      setSelectedFieldMetadata(sanitized);
+    },
+    [nodes, schema, setNodes],
+  );
 
   const nodeCanvasValue = useMemo<NodeCanvasContextValue>(
     () => ({
@@ -1080,7 +1215,8 @@ function InnerCanvas() {
     setSelectedNodeLabel(null);
     setSelectedNodeMetadata(null);
     setSidebarOpen(false);
-  }, []);
+    clearEdgeSelection();
+  }, [clearEdgeSelection]);
 
   const activeTouchpointLabel = activeTouchpointId
     ? (nodes.find((n) => n.id === activeTouchpointId)?.data as { label?: string } | undefined)?.label
@@ -1591,7 +1727,10 @@ function InnerCanvas() {
         {activeView === "glossary" ? (
           <GlossaryView nodes={nodes} schema={schema} />
         ) : (
-        <div ref={wrapperRef} className="flex-1 relative flow-export-host">
+        <div
+          ref={wrapperRef}
+          className={`flex-1 relative flow-export-host ${edgeSettingsOpen ? "canvas-edge-focus" : ""}`}
+        >
           {drawingMode && (
             <canvas
               ref={canvasRef}
@@ -1618,6 +1757,9 @@ function InnerCanvas() {
                 onDragOver={onDragOver}
                 onNodeClick={onNodeClick}
                 onNodeContextMenu={onNodeContextMenu}
+                onNodeDragStop={onNodeDragStop}
+                onEdgeClick={onEdgeClick}
+                onEdgeDoubleClick={onEdgeDoubleClick}
                 onPaneClick={onPaneClick}
                 connectionMode={ConnectionMode.Loose}
                 connectionRadius={28}
@@ -1644,8 +1786,9 @@ function InnerCanvas() {
                 multiSelectionKeyCode={["Meta", "Control"]}
                 fitView
                 proOptions={{ hideAttribution: true }}
+                style={{ background: "#f0f4f8" }}
               >
-            <Background gap={16} />
+            <Background gap={20} color="#cbd5e1" />
             <Controls />
             <MiniMap pannable zoomable />
             {nodes.length === 0 && (
@@ -1680,16 +1823,17 @@ function InnerCanvas() {
               </ReactFlow>
             </LineageProvider>
           </NodeCanvasProvider>
-          {connectionModalPos && pendingConnection && (
-            <ConnectionSettingsModal
-              position={connectionModalPos}
-              onConfirm={handleConnectionConfirm}
-              onCancel={handleConnectionCancel}
-            />
-          )}
         </div>
         )}
       </div>
+
+      <EdgeSettingsPanel
+        edge={edges.find((edge) => edge.id === selectedEdgeId) ?? null}
+        isOpen={edgeSettingsOpen}
+        onClose={clearEdgeSelection}
+        onUpdate={handleEdgeUpdate}
+        onDelete={handleEdgeDelete}
+      />
 
       <ClearCanvasDialog
         open={clearDialogOpen}
@@ -1747,7 +1891,8 @@ function InnerCanvas() {
         fieldId={selectedFieldId}
         fieldLabel={selectedFieldLabel}
         metadata={selectedFieldId ? selectedFieldMetadata : selectedNodeMetadata}
-        properties={selectedNodeProperties}
+        properties={selectedSidebarProperties}
+        selectionContext={sidebarSelectionContext}
         onUpdateMetadata={
           selectedFieldId
             ? (nodeId, metadata) => handleUpdateFieldMetadata(nodeId, selectedFieldId, metadata)
