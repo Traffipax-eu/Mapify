@@ -26,40 +26,42 @@ function ContainerNodeImpl({ id, data, selected }: NodeProps<ContainerNodeData>)
         handleClassName="container-node__resizer-handle"
       />
       <div className={`container-node ${selected ? "container-node--selected" : ""}`}>
-        {editing ? (
-          <input
-            autoFocus
-            value={titleDraft}
-            onChange={(event) => setTitleDraft(event.target.value)}
-            onBlur={() => {
-              setEditing(false);
-              commitTitle(titleDraft);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.currentTarget.blur();
-              }
-              if (event.key === "Escape") {
-                setTitleDraft(data.label);
+        <div className="container-node__header">
+          {editing ? (
+            <input
+              autoFocus
+              value={titleDraft}
+              onChange={(event) => setTitleDraft(event.target.value)}
+              onBlur={() => {
                 setEditing(false);
-              }
-            }}
-            className="container-node__title-input nodrag nopan"
-            aria-label="Container title"
-          />
-        ) : (
-          <button
-            type="button"
-            className="container-node__title nodrag nopan"
-            onDoubleClick={() => {
-              setTitleDraft(data.label);
-              setEditing(true);
-            }}
-            title="Double-click to rename"
-          >
-            {data.label}
-          </button>
-        )}
+                commitTitle(titleDraft);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.currentTarget.blur();
+                }
+                if (event.key === "Escape") {
+                  setTitleDraft(data.label);
+                  setEditing(false);
+                }
+              }}
+              className="container-node__title-input nodrag nopan"
+              aria-label="Container title"
+            />
+          ) : (
+            <button
+              type="button"
+              className="container-node__title nodrag nopan"
+              onDoubleClick={() => {
+                setTitleDraft(data.label);
+                setEditing(true);
+              }}
+              title="Double-click to rename"
+            >
+              {data.label}
+            </button>
+          )}
+        </div>
         <span className="container-node__hint">Drop nodes inside to group</span>
       </div>
     </>

@@ -32,7 +32,6 @@ function TextNodeImpl({ id, data, selected }: NodeProps<TextNodeData>) {
       />
       <div
         className={`drawing-node drawing-node--text ${selected ? "drawing-node--selected" : ""}`}
-        style={{ width: "100%", height: "100%" }}
       >
         {selected && (
           <button

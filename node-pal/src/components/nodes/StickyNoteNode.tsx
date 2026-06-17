@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useCallback } from "react";
 import { NodeResizer, type NodeProps } from "reactflow";
 import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
 
@@ -18,20 +18,18 @@ const VARIANTS: Record<StickyNoteVariant, { label: string }> = {
 
 function StickyNoteImpl({ id, data, selected }: NodeProps<StickyNoteData>) {
   const { onDeleteNode, onUpdateStickyNoteData } = useNodeCanvas();
-  const [editing, setEditing] = useState(false);
-  const [content, setContent] = useState(data.content || "");
-  const variant: StickyNoteVariant = data.variant ?? (data.color === "#ccfbf1" ? "teal" : "yellow");
+  const variant: StickyNoteVariant = data?.variant ?? (data?.color === "#ccfbf1" ? "teal" : "yellow");
 
   const stopPointer = (event: React.PointerEvent | React.MouseEvent) => {
     event.stopPropagation();
   };
 
-  const handleSave = () => {
-    const next = content.trim() || "New note...";
-    setContent(next);
-    onUpdateStickyNoteData(id, (current) => ({ ...current, content: next, variant }));
-    setEditing(false);
-  };
+  const updateContent = useCallback(
+    (content: string) => {
+      onUpdateStickyNoteData(id, (current) => ({ ...current, content, variant }));
+    },
+    [id, onUpdateStickyNoteData, variant],
+  );
 
   const cycleVariant = () => {
     const nextVariant: StickyNoteVariant = variant === "yellow" ? "teal" : "yellow";
@@ -49,7 +47,6 @@ function StickyNoteImpl({ id, data, selected }: NodeProps<StickyNoteData>) {
       />
       <div
         className={`sticky-note sticky-note--${variant} ${selected ? "sticky-note--selected" : ""}`}
-        style={{ width: "100%", height: "100%" }}
       >
         <div className="sticky-note__curl" aria-hidden />
 
@@ -79,26 +76,13 @@ function StickyNoteImpl({ id, data, selected }: NodeProps<StickyNoteData>) {
           aria-label="Change note color"
         />
 
-        {editing ? (
-          <textarea
-            value={content}
-            onChange={(event) => setContent(event.target.value)}
-            onBlur={handleSave}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                setContent(data.content || "");
-                setEditing(false);
-              }
-            }}
-            autoFocus
-            className="sticky-note__textarea nodrag nopan nowheel"
-            onPointerDown={stopPointer}
-          />
-        ) : (
-          <div className="sticky-note__content" onDoubleClick={() => setEditing(true)}>
-            {content || "Double-click to edit..."}
-          </div>
-        )}
+        <textarea
+          value={data?.content ?? ""}
+          onChange={(event) => updateContent(event.target.value)}
+          placeholder="Write a note..."
+          className="sticky-note__textarea nodrag nopan nowheel"
+          onPointerDown={stopPointer}
+        />
 
         <span className="sticky-note__resize-grip nodrag nopan" aria-hidden />
       </div>

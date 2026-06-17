@@ -43,8 +43,6 @@ function ShapeNodeImpl({ id, data, selected }: NodeProps<ShapeNodeData>) {
           selected ? "drawing-node--selected" : ""
         }`}
         style={{
-          width: "100%",
-          height: "100%",
           backgroundColor: isSticky ? data.color || "#fef08a" : isDiamond ? "transparent" : "transparent",
         }}
       >

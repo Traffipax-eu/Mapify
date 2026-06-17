@@ -14,14 +14,16 @@ export function getNodeMetadataDisplayItems(
   metadata: MetadataValues | undefined,
   properties: ScopedProperty[],
 ): NodeMetadataDisplayItem[] {
-  return properties.map((property) => {
-    const value = formatFieldCellValue(metadata, property.id, properties as PropertyDefinition[]);
-    return {
-      id: property.id,
-      name: property.name,
-      value,
-      scope: property.scope,
-      isEmpty: value === "—",
-    };
-  });
+  return properties
+    .filter((property) => Boolean(property?.id))
+    .map((property) => {
+      const value = formatFieldCellValue(metadata, property.id, properties as PropertyDefinition[]);
+      return {
+        id: property.id,
+        name: property.name?.trim() || "Attribute",
+        value,
+        scope: property.scope,
+        isEmpty: value === "—",
+      };
+    });
 }

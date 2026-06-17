@@ -4,22 +4,32 @@ export type ScopedProperty = PropertyDefinition & {
   scope: "global" | "group";
 };
 
+function isValidProperty(property: PropertyDefinition | null | undefined): property is PropertyDefinition {
+  return Boolean(property?.id);
+}
+
 /** Node-wide attributes (schema.globalProperties) — system/node level only. */
-export function getNodeGroupProperties(schema: Schema): ScopedProperty[] {
-  return (schema.globalProperties ?? []).map((property) => ({
-    ...property,
-    scope: "global",
-  }));
+export function getNodeGroupProperties(schema: Schema | null | undefined): ScopedProperty[] {
+  return (schema?.globalProperties ?? [])
+    .filter(isValidProperty)
+    .map((property) => ({
+      ...property,
+      name: property.name ?? "Attribute",
+      type: property.type ?? "text",
+      scope: "global" as const,
+    }));
 }
 
 /** Field-level attributes for a node group — table columns and field metadata only. */
-export function getFieldProperties(schema: Schema, nodeGroupId?: string): ScopedProperty[] {
+export function getFieldProperties(schema: Schema | null | undefined, nodeGroupId?: string): ScopedProperty[] {
   if (!nodeGroupId) return [];
   const groupProps =
-    schema.nodeGroups.find((group) => group.id === nodeGroupId)?.properties ?? [];
-  return groupProps.map((property) => ({
+    schema?.nodeGroups.find((group) => group.id === nodeGroupId)?.properties ?? [];
+  return groupProps.filter(isValidProperty).map((property) => ({
     ...property,
-    scope: "group",
+    name: property.name ?? "Attribute",
+    type: property.type ?? "text",
+    scope: "group" as const,
   }));
 }
 

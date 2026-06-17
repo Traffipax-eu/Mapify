@@ -55,13 +55,13 @@ export function MetadataSidebar({
   const SectionIcon = isFieldContext ? Layers : Globe;
 
   const allowedPropertyIds = useMemo(
-    () => new Set(properties.map((property) => property.id)),
+    () => new Set(properties.filter((property) => property?.id).map((property) => property.id)),
     [properties],
   );
 
   useEffect(() => {
     const next: MetadataValues = {};
-    if (metadata) {
+    if (metadata && typeof metadata === "object") {
       for (const [key, value] of Object.entries(metadata)) {
         if (allowedPropertyIds.has(key)) {
           next[key] = value;
@@ -72,7 +72,7 @@ export function MetadataSidebar({
   }, [metadata, allowedPropertyIds]);
 
   useEffect(() => {
-    setNameDraft(isFieldContext ? fieldLabel || "" : nodeLabel || "");
+    setNameDraft(isFieldContext ? fieldLabel ?? "" : nodeLabel ?? "");
   }, [isFieldContext, fieldLabel, nodeLabel]);
 
   const handleChange = (propertyId: string, value: unknown) => {
@@ -157,7 +157,7 @@ export function MetadataSidebar({
           </Button>
         )}
 
-        {properties.length === 0 ? (
+        {properties.filter((property) => property?.id).length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No {isFieldContext ? SCHEMA_SCOPE_LABELS.group.short : SCHEMA_SCOPE_LABELS.global.short}{" "}
             attributes defined. Open the schema editor on this node group to add them.
@@ -195,7 +195,7 @@ function MetadataSection({
         {icon}
         {title}
       </h3>
-      {properties.map((property) => (
+      {properties.filter((property) => property?.id).map((property) => (
         <PropertyField
           key={property.id}
           property={property}
@@ -234,19 +234,26 @@ function PropertyField({
           />
         </div>
       );
-    case "select":
+    case "select": {
+      const options = property.options ?? [];
+      const rawValue = value === undefined || value === null ? "" : String(value);
+      const selectValue = options.includes(rawValue) ? rawValue : undefined;
       return (
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
             {propertyName}
             {property.required && <span className="text-destructive ml-1">*</span>}
           </label>
-          <Select value={String(value || "")} onValueChange={onChange}>
+          <Select
+            value={selectValue}
+            onValueChange={onChange}
+            disabled={options.length === 0}
+          >
             <SelectTrigger className="text-sm">
               <SelectValue placeholder={`Select ${propertyName.toLowerCase()}`} />
             </SelectTrigger>
             <SelectContent>
-              {property.options?.map((option) => (
+              {options.map((option) => (
                 <SelectItem key={option} value={option}>
                   {option}
                 </SelectItem>
@@ -255,6 +262,7 @@ function PropertyField({
           </Select>
         </div>
       );
+    }
     case "date":
       return (
         <div className="space-y-2 mb-4">
@@ -286,14 +294,18 @@ function PropertyField({
           />
         </div>
       );
-    case "boolean":
+    case "boolean": {
+      const boolValue = value === true || value === "true";
       return (
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
             {propertyName}
             {property.required && <span className="text-destructive ml-1">*</span>}
           </label>
-          <Select value={value ? "true" : "false"} onValueChange={(val) => onChange(val === "true")}>
+          <Select
+            value={boolValue ? "true" : "false"}
+            onValueChange={(val) => onChange(val === "true")}
+          >
             <SelectTrigger className="text-sm">
               <SelectValue placeholder={propertyName} />
             </SelectTrigger>
@@ -304,6 +316,7 @@ function PropertyField({
           </Select>
         </div>
       );
+    }
     default:
       return (
         <div className="space-y-2 mb-4">

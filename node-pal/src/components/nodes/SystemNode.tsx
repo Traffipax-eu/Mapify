@@ -61,7 +61,8 @@ export type SystemNodeData = {
   visibleColumns?: string[];
 };
 
-function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
+function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeData>) {
+  const data: SystemNodeData = rawData ?? { label: "System" };
   const { schema, onUpdateNodeData, onDeleteNode, onFieldSelect, onDeleteField, onFieldConnectDrop } =
     useNodeCanvas();
   const updateNodeInternals = useUpdateNodeInternals();
@@ -298,7 +299,7 @@ function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
           <HeaderIcon className="h-4 w-4" />
         </span>
         <div className="system-node__header-content">
-          <span className="system-node__title">{data.label}</span>
+          <span className="system-node__title">{data.label ?? "System"}</span>
           {collapsed && fields.length > 0 && <span className="system-node__count">{fields.length}</span>}
         </div>
         <button

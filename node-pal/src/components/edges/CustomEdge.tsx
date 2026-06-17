@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -11,9 +11,9 @@ import {
 import { Plus } from "lucide-react";
 import { buildMarker } from "@/lib/edgeMarkers";
 import {
-  buildFlexiblePath,
+  buildWaypointPath,
   getPathMidpoint,
-  resolveControlPoints,
+  resolveWaypoints,
   type FlowPoint,
 } from "@/lib/edgePath";
 import type { EdgeData, EdgePathType } from "@/lib/storage";
@@ -80,25 +80,24 @@ function CustomEdgeImpl({
   markerEnd,
 }: EdgeProps<CustomEdgeData>) {
   const { setEdges, screenToFlowPosition } = useReactFlow();
-  const draggingRef = useRef(false);
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
 
   const pathType = data?.pathType ?? "step";
   const lineStyle = data?.lineStyle ?? "solid";
   const source: FlowPoint = { x: sourceX, y: sourceY };
   const target: FlowPoint = { x: targetX, y: targetY };
 
-  const usesCustomPath =
-    pathType === "custom" || (pathType === "bezier" && Boolean(data?.controlPoints?.length));
-
-  const controlPoints = useMemo(
-    () => resolveControlPoints(source, target, data?.controlPoints),
-    [source.x, source.y, target.x, target.y, data?.controlPoints],
+  const waypoints = useMemo(
+    () => resolveWaypoints(data?.controlPoints),
+    [data?.controlPoints],
   );
 
+  const hasCustomBends = waypoints.length > 0;
+
   const [edgePath, labelX, labelY] = useMemo(() => {
-    if (usesCustomPath) {
-      const path = buildFlexiblePath(source, controlPoints, target);
-      const midpoint = getPathMidpoint(source, target, controlPoints);
+    if (hasCustomBends) {
+      const path = buildWaypointPath(source, target, waypoints);
+      const midpoint = getPathMidpoint(source, target, waypoints);
       return [path, midpoint.x, midpoint.y] as const;
     }
 
@@ -112,8 +111,8 @@ function CustomEdgeImpl({
     });
     return [path, lx, ly] as const;
   }, [
-    usesCustomPath,
-    controlPoints,
+    hasCustomBends,
+    waypoints,
     source,
     target,
     pathType,
@@ -145,15 +144,15 @@ function CustomEdgeImpl({
           ? "10 8"
           : "7 9",
     animation: isLineage ? "lineage-dash 1s linear infinite" : "edge-flow 1.4s linear infinite",
-    transition: draggingRef.current ? "none" : "d 0.18s ease",
+    transition: draggingIndex !== null ? "none" : "d 0.18s ease",
   };
 
   const resolvedMarkerStart = markerStart ?? buildMarker(data?.markerStart ?? "none", strokeColor);
   const resolvedMarkerEnd = markerEnd ?? buildMarker(data?.markerEnd ?? "arrowclosed", strokeColor);
   const labelText = data?.label?.trim() ?? "";
 
-  const updateControlPoints = useCallback(
-    (nextPoints: FlowPoint[], nextPathType: EdgePathType = "custom") => {
+  const updateWaypoints = useCallback(
+    (nextPoints: FlowPoint[]) => {
       setEdges((edges) =>
         edges.map((edge) =>
           edge.id === id
@@ -161,7 +160,7 @@ function CustomEdgeImpl({
                 ...edge,
                 data: {
                   ...edge.data,
-                  pathType: nextPathType,
+                  pathType: "custom" as const,
                   controlPoints: nextPoints,
                 },
               }
@@ -172,26 +171,30 @@ function CustomEdgeImpl({
     [id, setEdges],
   );
 
-  const addMidControlPoint = useCallback(() => {
-    const midpoint = getPathMidpoint(source, target, controlPoints);
-    updateControlPoints([...controlPoints, midpoint], "custom");
-  }, [controlPoints, source, target, updateControlPoints]);
+  const addMidWaypoint = useCallback(() => {
+    const insertPoint = hasCustomBends
+      ? getPathMidpoint(source, target, waypoints)
+      : { x: labelX, y: labelY };
+    updateWaypoints([...waypoints, insertPoint]);
+  }, [hasCustomBends, waypoints, source, target, labelX, labelY, updateWaypoints]);
 
-  const onControlPointPointerDown = (index: number, event: React.PointerEvent<HTMLButtonElement>) => {
+  const onWaypointPointerDown = (index: number, event: React.PointerEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     event.preventDefault();
-    draggingRef.current = true;
+    setDraggingIndex(index);
 
     const targetElement = event.currentTarget;
     targetElement.setPointerCapture(event.pointerId);
 
     const handleMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault();
+      moveEvent.stopPropagation();
       const position = screenToFlowPosition({ x: moveEvent.clientX, y: moveEvent.clientY });
       setEdges((edges) =>
         edges.map((edge) => {
           if (edge.id !== id) return edge;
-          const points = resolveControlPoints(source, target, edge.data?.controlPoints);
-          const next = [...points];
+          const next = [...resolveWaypoints(edge.data?.controlPoints)];
+          if (index < 0 || index >= next.length) return edge;
           next[index] = position;
           return {
             ...edge,
@@ -201,18 +204,22 @@ function CustomEdgeImpl({
       );
     };
 
-    const handleUp = () => {
-      draggingRef.current = false;
-      targetElement.releasePointerCapture(event.pointerId);
+    const finishDrag = (upEvent: PointerEvent) => {
+      setDraggingIndex(null);
+      if (targetElement.hasPointerCapture(upEvent.pointerId)) {
+        targetElement.releasePointerCapture(upEvent.pointerId);
+      }
       window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
     };
 
     window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", finishDrag);
   };
 
-  const showControlPoints = selected && !isLineage;
+  const showBendControls = selected && !isLineage;
 
   return (
     <>
@@ -224,19 +231,20 @@ function CustomEdgeImpl({
         interactionWidth={40}
         className={selected ? "custom-edge--selected" : undefined}
       />
-      {showControlPoints && (
+      {showBendControls && (
         <EdgeLabelRenderer>
-          {controlPoints.map((point, index) => (
+          {waypoints.map((point, index) => (
             <button
-              key={`${id}-cp-${index}`}
+              key={`${id}-wp-${index}`}
               type="button"
-              className="edge-control-point nodrag nopan"
+              className={`edge-control-point nodrag nopan ${draggingIndex === index ? "is-dragging" : ""}`}
               style={{
                 position: "absolute",
                 transform: `translate(-50%, -50%) translate(${point.x}px, ${point.y}px)`,
                 pointerEvents: "all",
+                zIndex: 1001,
               }}
-              onPointerDown={(event) => onControlPointPointerDown(index, event)}
+              onPointerDown={(event) => onWaypointPointerDown(index, event)}
               aria-label={`Adjust connection bend ${index + 1}`}
             />
           ))}
@@ -247,10 +255,12 @@ function CustomEdgeImpl({
               position: "absolute",
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
               pointerEvents: "all",
+              zIndex: 1000,
             }}
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
-              addMidControlPoint();
+              addMidWaypoint();
             }}
             title="Add bend point"
             aria-label="Add bend point"

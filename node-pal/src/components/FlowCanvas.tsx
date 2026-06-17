@@ -519,7 +519,6 @@ function InnerCanvas() {
           edge.id === edgeId ? applyConnectionSettingsToEdge(edge, settings, label, description) : edge,
         ),
       );
-      toast.success("Connection updated");
     },
     [setEdges],
   );
@@ -899,16 +898,19 @@ function InnerCanvas() {
   const handleFieldSelect = useCallback(
     (nodeId: string, fieldId: string) => {
       const node = nodes.find((item) => item.id === nodeId);
-      const field = (node?.data as SystemNodeData | undefined)?.fields?.find((item) => item.id === fieldId);
+      const nodeData = (node?.data ?? {}) as SystemNodeData;
+      const field = nodeData.fields?.find((item) => item.id === fieldId);
 
       clearEdgeSelection();
       setLineageAnchor({ nodeId, fieldId });
       setSelectedNodeId(nodeId);
       setSelectedFieldId(fieldId);
-      setSelectedNodeLabel((node?.data as { label?: string } | undefined)?.label || null);
-      setSelectedFieldLabel(field?.label || null);
+      setSelectedNodeLabel(nodeData.label ?? null);
+      setSelectedFieldLabel(field?.label ?? null);
       setSelectedNodeMetadata(null);
-      setSelectedFieldMetadata(field?.metadata ?? {});
+      setSelectedFieldMetadata(
+        field?.metadata && typeof field.metadata === "object" ? { ...field.metadata } : {},
+      );
       setSidebarOpen(true);
     },
     [nodes, clearEdgeSelection],
@@ -1088,6 +1090,8 @@ function InnerCanvas() {
 
   const onNodeClick = useCallback(
     (_e: React.MouseEvent, node: Node) => {
+      const nodeData = (node.data ?? {}) as SystemNodeData & { label?: string; metadata?: MetadataValues };
+
       if (node.type === "touchpoint") {
         setActiveTouchpointId((curr) => (curr === node.id ? null : node.id));
         setLineageAnchor(null);
@@ -1099,7 +1103,13 @@ function InnerCanvas() {
         setLineageAnchor(null);
       }
 
-      if (node.type === "textNode" || node.type === "shapeNode" || node.type === "stickyNote" || node.type === "container" || node.type === "customObject") {
+      if (
+        node.type === "textNode" ||
+        node.type === "shapeNode" ||
+        node.type === "stickyNote" ||
+        node.type === "container" ||
+        node.type === "customObject"
+      ) {
         setSidebarOpen(false);
         clearEdgeSelection();
         return;
@@ -1109,9 +1119,11 @@ function InnerCanvas() {
 
       setSelectedNodeId(node.id);
       setSelectedFieldId(null);
-      setSelectedNodeLabel((node.data as { label?: string })?.label || null);
+      setSelectedNodeLabel(nodeData.label ?? null);
       setSelectedFieldLabel(null);
-      setSelectedNodeMetadata((node.data as { metadata?: MetadataValues })?.metadata || null);
+      setSelectedNodeMetadata(
+        nodeData.metadata && typeof nodeData.metadata === "object" ? { ...nodeData.metadata } : {},
+      );
       setSelectedFieldMetadata(null);
       setSidebarOpen(node.type === "system");
     },
@@ -1987,7 +1999,7 @@ function InnerCanvas() {
         nodeLabel={selectedNodeLabel}
         fieldId={selectedFieldId}
         fieldLabel={selectedFieldLabel}
-        metadata={selectedFieldId ? selectedFieldMetadata : selectedNodeMetadata}
+        metadata={(selectedFieldId ? selectedFieldMetadata : selectedNodeMetadata) ?? {}}
         properties={selectedSidebarProperties}
         selectionContext={sidebarSelectionContext}
         onUpdateMetadata={
