@@ -68,8 +68,9 @@ import { getNodeGroupProperties, getFieldProperties, pickMetadataForProperties, 
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
 import { createDrawingNode } from "@/lib/createDrawingNode";
 import { createContainerNode } from "@/lib/createContainerNode";
-import { createCustomObjectNode } from "@/lib/createCustomObjectNode";
-import { isCustomObjectPayload } from "@/lib/customObjects";
+import { createCustomObjectNode, createConfiguredCustomObjectNode } from "@/lib/createCustomObjectNode";
+import { isCustomObjectPayload, isCustomObjectTemplatePayload } from "@/lib/customObjects";
+import { CustomObjectDialog, type CustomObjectConfig } from "./CustomObjectDialog";
 import {
   assignNodeParent,
   detachChildrenBeforeContainerDelete,
@@ -79,6 +80,12 @@ import {
 } from "@/lib/containerUtils";
 import { DEFAULT_CONNECTION_SETTINGS, type ConnectionSettings } from "@/lib/connectionSettings";
 import { normalizeConnection, type NormalizedConnection } from "@/lib/connectionUtils";
+import {
+  cloneNodesForClipboard,
+  duplicateNodesFromClipboard,
+  getSelectedCopyableNodes,
+  isEditableKeyboardTarget,
+} from "@/lib/clipboardNodes";
 
 let nodeIdCounter = 1;
 const nextNodeId = () => `n_${Date.now()}_${nodeIdCounter++}`;
@@ -157,11 +164,15 @@ function InnerCanvas() {
   const [isEncrypting, setIsEncrypting] = useState(false);
   const [cloudSnapshotsOpen, setCloudSnapshotsOpen] = useState(false);
   const [nodeNameDialogOpen, setNodeNameDialogOpen] = useState(false);
+  const [customObjectDialogOpen, setCustomObjectDialogOpen] = useState(false);
+  const [pendingCustomObjectPosition, setPendingCustomObjectPosition] = useState<{ x: number; y: number } | null>(null);
   const [pendingNodeDrop, setPendingNodeDrop] = useState<{
     position: { x: number; y: number };
     item: NodeGroupDragPayload;
   } | null>(null);
   const loadedSheetIdRef = useRef<string | null>(null);
+  const clipboardNodesRef = useRef<Node[]>([]);
+  const pasteGenerationRef = useRef(0);
 
   const {
     hydrated: workspaceHydrated,
@@ -576,11 +587,47 @@ function InnerCanvas() {
         return;
       }
 
+      if (isCustomObjectTemplatePayload(item)) {
+        setPendingCustomObjectPosition(position);
+        setCustomObjectDialogOpen(true);
+        return;
+      }
+
       if (isCustomObjectPayload(item)) {
+        if (item.objectId === "custom") {
+          setPendingCustomObjectPosition(position);
+          setCustomObjectDialogOpen(true);
+          return;
+        }
         setNodes((nds) => nds.concat(createCustomObjectNode(item.objectId, position, nextNodeId)));
       }
     },
     [rfInstance, setNodes],
+  );
+
+  const handleCustomObjectConfirm = useCallback(
+    (config: CustomObjectConfig) => {
+      const position =
+        pendingCustomObjectPosition ??
+        (rfInstance
+          ? rfInstance.screenToFlowPosition({
+              x: window.innerWidth / 2,
+              y: window.innerHeight / 2,
+            })
+          : { x: 0, y: 0 });
+
+      setNodes((nds) =>
+        nds.concat(
+          createConfiguredCustomObjectNode(position, nextNodeId, {
+            label: config.label,
+            accent: config.accent,
+            iconId: config.iconId,
+          }),
+        ),
+      );
+      setPendingCustomObjectPosition(null);
+    },
+    [pendingCustomObjectPosition, rfInstance, setNodes],
   );
 
   const createNodeFromDrop = useCallback(
@@ -851,23 +898,20 @@ function InnerCanvas() {
 
   const handleFieldSelect = useCallback(
     (nodeId: string, fieldId: string) => {
-      setNodes((nds) => {
-        const node = nds.find((item) => item.id === nodeId);
-        const field = (node?.data as SystemNodeData | undefined)?.fields?.find((item) => item.id === fieldId);
+      const node = nodes.find((item) => item.id === nodeId);
+      const field = (node?.data as SystemNodeData | undefined)?.fields?.find((item) => item.id === fieldId);
 
-        setLineageAnchor({ nodeId, fieldId });
-        setSelectedNodeId(nodeId);
-        setSelectedFieldId(fieldId);
-        setSelectedNodeLabel((node?.data as { label?: string } | undefined)?.label || null);
-        setSelectedFieldLabel(field?.label || null);
-        setSelectedNodeMetadata(null);
-        setSelectedFieldMetadata(field?.metadata || null);
-        setSidebarOpen(true);
-
-        return nds;
-      });
+      clearEdgeSelection();
+      setLineageAnchor({ nodeId, fieldId });
+      setSelectedNodeId(nodeId);
+      setSelectedFieldId(fieldId);
+      setSelectedNodeLabel((node?.data as { label?: string } | undefined)?.label || null);
+      setSelectedFieldLabel(field?.label || null);
+      setSelectedNodeMetadata(null);
+      setSelectedFieldMetadata(field?.metadata ?? {});
+      setSidebarOpen(true);
     },
-    [setNodes],
+    [nodes, clearEdgeSelection],
   );
 
   const handleDeleteField = useCallback(
@@ -1613,6 +1657,50 @@ function InnerCanvas() {
   }, [isDrawing, drawLine, endDrawing]);
 
   useEffect(() => {
+    if (drawingMode || activeView !== "canvas") return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditableKeyboardTarget(event.target)) return;
+      if (!event.metaKey && !event.ctrlKey) return;
+
+      const key = event.key.toLowerCase();
+
+      if (key === "c") {
+        const selected = getSelectedCopyableNodes(nodes);
+        if (selected.length === 0) return;
+        event.preventDefault();
+        clipboardNodesRef.current = cloneNodesForClipboard(nodes);
+        pasteGenerationRef.current = 0;
+        toast.success(`Copied ${selected.length} item${selected.length === 1 ? "" : "s"}`);
+        return;
+      }
+
+      if (key === "v") {
+        if (clipboardNodesRef.current.length === 0) return;
+        event.preventDefault();
+        pasteGenerationRef.current += 1;
+        const duplicates = duplicateNodesFromClipboard(
+          clipboardNodesRef.current,
+          nextNodeId,
+          pasteGenerationRef.current,
+        );
+        setNodes((current) =>
+          sortNodesParentFirst([
+            ...current.map((node) => ({ ...node, selected: false })),
+            ...duplicates,
+          ]),
+        );
+        clearEdgeSelection();
+        setSidebarOpen(false);
+        toast.success(`Pasted ${duplicates.length} item${duplicates.length === 1 ? "" : "s"}`);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [nodes, drawingMode, activeView, setNodes, clearEdgeSelection]);
+
+  useEffect(() => {
     if (!drawingMode) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") exitDrawingMode();
@@ -1852,6 +1940,15 @@ function InnerCanvas() {
         }}
         onConfirm={createNodeFromDrop}
         onCancel={cancelNodeDrop}
+      />
+
+      <CustomObjectDialog
+        open={customObjectDialogOpen}
+        onOpenChange={(open) => {
+          setCustomObjectDialogOpen(open);
+          if (!open) setPendingCustomObjectPosition(null);
+        }}
+        onConfirm={handleCustomObjectConfirm}
       />
 
       <CloudSnapshotsDialog

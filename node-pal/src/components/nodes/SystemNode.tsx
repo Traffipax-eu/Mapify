@@ -20,9 +20,11 @@ import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import { getNodeMetadataDisplayItems } from "@/lib/nodeMetadataDisplay";
 import {
   createSection,
+  DEFAULT_SECTION_ID,
   getEffectiveSections,
   getFieldsForSection,
-  DEFAULT_SECTION_ID,
+  getRenderableSections,
+  shouldShowSectionSelect,
 } from "@/lib/nodeSections";
 import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons";
 import { getContrastTextColor } from "@/lib/colorContrast";
@@ -68,6 +70,8 @@ function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
 
   const fields = data.fields ?? [];
   const sections = useMemo(() => getEffectiveSections(data), [data.sections]);
+  const renderableSections = useMemo(() => getRenderableSections(data, fields), [data, fields]);
+  const showSectionSelect = useMemo(() => shouldShowSectionSelect(data), [data]);
   const collapsed = !!data.collapsed;
   const tableExpanded = !!data.tableExpanded;
   const faded = hasLineage && !lineageNodeIds.has(id);
@@ -350,12 +354,16 @@ function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
       {!collapsed && (
         <div className="system-node__body nodrag nopan nowheel" onPointerDown={stopPointer}>
           <div className="system-node__sections">
-            {sections.map((section) => {
+            {renderableSections.map((section) => {
               const sectionFields = getFieldsForSection(fields, section.id);
               const isEditingSection = editingSectionId === section.id;
 
               return (
-                <div key={section.id} className="system-node__section">
+                <div
+                  key={section.id}
+                  className={`system-node__section ${section.showHeader ? "" : "system-node__section--flat"}`}
+                >
+                  {section.showHeader && (
                   <div className="system-node__section-header">
                     {isEditingSection ? (
                       <input
@@ -398,6 +406,7 @@ function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
                       </button>
                     )}
                   </div>
+                  )}
 
                   <div className={tableExpanded ? "system-node__table" : "system-node__field-list"}>
                     {tableExpanded && (
@@ -416,7 +425,7 @@ function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
                       </div>
                     )}
 
-                    {sectionFields.length === 0 && (
+                    {section.showHeader && sectionFields.length === 0 && (
                       <p className="system-node__section-empty">No fields in this section</p>
                     )}
 
@@ -442,12 +451,21 @@ function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
             })}
           </div>
 
-          <div className="system-node__add-row nodrag nopan nowheel" onPointerDown={stopPointer}>
+          <div
+            className="system-node__add-row nodrag nopan nowheel"
+            onPointerDown={stopPointer}
+            onMouseDown={stopPointer}
+            onClick={stopPointer}
+          >
+            {showSectionSelect && (
             <select
               value={addFieldSectionId}
               onChange={(e) => setAddFieldSectionId(e.target.value)}
               className="system-node__section-select nodrag nopan"
               title="Target section"
+              onPointerDown={stopPointer}
+              onMouseDown={stopPointer}
+              onClick={stopPointer}
             >
               {sections.map((section) => (
                 <option key={section.id} value={section.id}>
@@ -455,6 +473,7 @@ function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
                 </option>
               ))}
             </select>
+            )}
             <input
               value={newField}
               onChange={(e) => setNewField(e.target.value)}
@@ -463,6 +482,9 @@ function SystemNodeImpl({ id, data, selected }: NodeProps<SystemNodeData>) {
               }}
               placeholder="New field name"
               className="system-node__attr-input nodrag nopan nowheel"
+              onPointerDown={stopPointer}
+              onMouseDown={stopPointer}
+              onClick={stopPointer}
             />
             <button
               type="button"

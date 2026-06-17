@@ -216,16 +216,18 @@ function PropertyField({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
-  switch (property.type) {
+  const propertyName = property.name?.trim() || "Attribute";
+
+  switch (property.type ?? "text") {
     case "textarea":
       return (
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
-            {property.name}
+            {propertyName}
             {property.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Textarea
-            placeholder={`Enter ${property.name.toLowerCase()}...`}
+            placeholder={`Enter ${propertyName.toLowerCase()}...`}
             value={String(value || "")}
             onChange={(e) => onChange(e.target.value)}
             className="min-h-[80px] text-sm"
@@ -236,12 +238,12 @@ function PropertyField({
       return (
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
-            {property.name}
+            {propertyName}
             {property.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Select value={String(value || "")} onValueChange={onChange}>
             <SelectTrigger className="text-sm">
-              <SelectValue placeholder={`Select ${property.name.toLowerCase()}`} />
+              <SelectValue placeholder={`Select ${propertyName.toLowerCase()}`} />
             </SelectTrigger>
             <SelectContent>
               {property.options?.map((option) => (
@@ -257,7 +259,7 @@ function PropertyField({
       return (
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
-            {property.name}
+            {propertyName}
             {property.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Input
@@ -272,12 +274,12 @@ function PropertyField({
       return (
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
-            {property.name}
+            {propertyName}
             {property.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Input
             type="number"
-            placeholder={`Enter ${property.name.toLowerCase()}...`}
+            placeholder={`Enter ${propertyName.toLowerCase()}...`}
             value={String(value || "")}
             onChange={(e) => onChange(e.target.value)}
             className="text-sm"
@@ -288,12 +290,12 @@ function PropertyField({
       return (
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
-            {property.name}
+            {propertyName}
             {property.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Select value={value ? "true" : "false"} onValueChange={(val) => onChange(val === "true")}>
             <SelectTrigger className="text-sm">
-              <SelectValue placeholder={property.name} />
+              <SelectValue placeholder={propertyName} />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="true">Yes</SelectItem>
@@ -306,11 +308,11 @@ function PropertyField({
       return (
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
-            {property.name}
+            {propertyName}
             {property.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Input
-            placeholder={`Enter ${property.name.toLowerCase()}...`}
+            placeholder={`Enter ${propertyName.toLowerCase()}...`}
             value={String(value || "")}
             onChange={(e) => onChange(e.target.value)}
             className="text-sm"

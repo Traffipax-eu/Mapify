@@ -270,7 +270,10 @@ function PropertyEditor({
             placeholder="Attribute name"
             className="flex-1 h-8 text-sm"
           />
-          <Select value={property.type} onValueChange={(value: PropertyType) => onUpdate({ type: value })}>
+          <Select
+            value={property.type ?? "text"}
+            onValueChange={(value: PropertyType) => onUpdate({ type: value })}
+          >
             <SelectTrigger className="w-28 h-8 text-xs">
               <SelectValue />
             </SelectTrigger>

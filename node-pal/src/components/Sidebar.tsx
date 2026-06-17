@@ -244,7 +244,11 @@ function CustomObjectCard({
   const onDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData(
       "application/reactflow",
-      JSON.stringify({ kind: "custom-object", objectId }),
+      JSON.stringify(
+        objectId === "custom"
+          ? { kind: "custom-object-template" }
+          : { kind: "custom-object", objectId },
+      ),
     );
     e.dataTransfer.effectAllowed = "move";
   };

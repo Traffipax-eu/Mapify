@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 import { Position, useReactFlow, type NodeProps } from "reactflow";
-import { getCustomObjectDefinition, type CustomObjectId } from "@/lib/customObjects";
+import { resolveCustomObjectIcon, type CustomObjectId } from "@/lib/customObjects";
+import type { NodeIconId } from "@/lib/nodeIcons";
 import { PlusHandle } from "./PlusHandle";
 import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
 
@@ -8,14 +9,14 @@ export type CustomObjectNodeData = {
   objectId: CustomObjectId;
   label: string;
   accent?: string;
+  iconId?: NodeIconId;
 };
 
 function CustomObjectNodeImpl({ id, data, selected }: NodeProps<CustomObjectNodeData>) {
   const { onDeleteNode } = useNodeCanvas();
   const { setNodes } = useReactFlow();
-  const definition = getCustomObjectDefinition(data.objectId);
-  const Icon = definition?.icon;
-  const accent = data.accent ?? definition?.accent ?? "#3b82f6";
+  const Icon = resolveCustomObjectIcon(data.iconId, data.objectId);
+  const accent = data.accent ?? "#3b82f6";
   const [editing, setEditing] = useState(false);
   const [labelDraft, setLabelDraft] = useState(data.label);
 
@@ -24,7 +25,7 @@ function CustomObjectNodeImpl({ id, data, selected }: NodeProps<CustomObjectNode
   };
 
   const commitLabel = (nextLabel: string) => {
-    const label = nextLabel.trim() || definition?.defaultName || "Object";
+    const label = nextLabel.trim() || "Object";
     setNodes((nodes) =>
       nodes.map((node) =>
         node.id === id
@@ -57,7 +58,7 @@ function CustomObjectNodeImpl({ id, data, selected }: NodeProps<CustomObjectNode
       </button>
 
       <div className="custom-object-node__icon-wrap nodrag nopan" aria-hidden>
-        {Icon ? <Icon className="custom-object-node__icon" /> : null}
+        <Icon className="custom-object-node__icon" />
       </div>
 
       {editing ? (

@@ -221,7 +221,7 @@ function CustomEdgeImpl({
         style={edgeStyle}
         markerStart={resolvedMarkerStart}
         markerEnd={resolvedMarkerEnd}
-        interactionWidth={20}
+        interactionWidth={40}
         className={selected ? "custom-edge--selected" : undefined}
       />
       {showControlPoints && (
