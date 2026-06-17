@@ -25,7 +25,7 @@ export function SmartHoverAttributes({
   const { visible, position, hoverHandlers } = useSmartHover(500);
 
   const items = useMemo(
-    () => getAttributeDisplayItems(metadata, properties),
+    () => getAttributeDisplayItems(metadata, properties ?? []),
     [metadata, properties],
   );
 

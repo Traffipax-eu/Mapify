@@ -11,7 +11,8 @@ type Props = {
 export function AttributeGlassTooltip({ visible, position, title, items }: Props) {
   if (!visible || typeof document === "undefined") return null;
 
-  const hasItems = items.length > 0;
+  const safeItems = items ?? [];
+  const hasItems = safeItems.length > 0;
 
   return createPortal(
     <div
@@ -25,7 +26,7 @@ export function AttributeGlassTooltip({ visible, position, title, items }: Props
       {title && <p className="attribute-glass-tooltip__title">{title}</p>}
       {hasItems ? (
         <dl className="attribute-glass-tooltip__list">
-          {items.map((item) => (
+          {safeItems.map((item) => (
             <div key={`${item.key}-${item.value}`} className="attribute-glass-tooltip__row">
               <dt>{item.key}</dt>
               <dd>{item.value}</dd>

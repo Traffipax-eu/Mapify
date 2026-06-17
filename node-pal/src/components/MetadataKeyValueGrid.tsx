@@ -69,7 +69,7 @@ export function MetadataKeyValueGrid({ metadata, properties = [], onChange }: Pr
         </div>
       )}
 
-      {rows.map((row) => (
+      {(rows ?? []).map((row) => (
         <AttributeRowEditor
           key={row.rowId}
           row={row}

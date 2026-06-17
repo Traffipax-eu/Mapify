@@ -40,20 +40,21 @@ export function metadataToAttributeRows(
 }
 
 export function attributeRowsToMetadata(
-  rows: AttributeRow[],
+  rows: AttributeRow[] | null | undefined,
   properties: ScopedProperty[] = [],
 ): MetadataValues {
+  const safeRows = Array.isArray(rows) ? rows : [];
   const propertyById = new Map(
     (properties ?? []).filter((p) => p?.id).map((property) => [property.id, property]),
   );
   const propertyByName = new Map(
     (properties ?? [])
-      .filter((p) => p?.id && p?.name)
-      .map((property) => [property.name.trim().toLowerCase(), property.id]),
+      .filter((p) => p?.id && p?.name?.trim())
+      .map((property) => [property.name!.trim().toLowerCase(), property.id]),
   );
 
   const next: MetadataValues = {};
-  for (const row of rows) {
+  for (const row of safeRows) {
     const label = row.label.trim();
     if (!label) continue;
     if (row.value === "") continue;

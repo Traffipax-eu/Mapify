@@ -26,12 +26,14 @@ import {
 } from "@/lib/nodeSections";
 import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons";
 import { getContrastTextColor } from "@/lib/colorContrast";
+import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import {
   FIELD_CONNECTION_MIME,
   parseFieldConnectionDrag,
   serializeFieldConnectionDrag,
 } from "@/lib/fieldConnectionDnD";
 import { SmartHoverAttributes } from "@/components/SmartHoverAttributes";
+import { PlusHandle } from "./PlusHandle";
 
 export type Field = {
   id: string;
