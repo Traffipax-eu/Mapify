@@ -10,7 +10,9 @@ function isValidProperty(property: PropertyDefinition | null | undefined): prope
 
 /** Node-wide attributes (schema.globalProperties) — system/node level only. */
 export function getNodeGroupProperties(schema: Schema | null | undefined): ScopedProperty[] {
-  return (schema?.globalProperties ?? [])
+  const globalProps = schema?.globalProperties;
+  const list = Array.isArray(globalProps) ? globalProps : [];
+  return list
     .filter(isValidProperty)
     .map((property) => ({
       ...property,
@@ -24,7 +26,8 @@ export function getNodeGroupProperties(schema: Schema | null | undefined): Scope
 export function getFieldProperties(schema: Schema | null | undefined, nodeGroupId?: string): ScopedProperty[] {
   if (!nodeGroupId) return [];
   const groupProps =
-    schema?.nodeGroups.find((group) => group.id === nodeGroupId)?.properties ?? [];
+    schema?.nodeGroups?.find((group) => group?.id === nodeGroupId)?.properties ?? [];
+  if (!Array.isArray(groupProps)) return [];
   return groupProps.filter(isValidProperty).map((property) => ({
     ...property,
     name: property.name ?? "Attribute",
@@ -48,10 +51,11 @@ export function getScopedProperties(schema: Schema, nodeGroupId?: string): Scope
 /** Keep only metadata keys that belong to the given property definitions. */
 export function pickMetadataForProperties(
   metadata: MetadataValues | undefined,
-  properties: PropertyDefinition[],
+  properties: PropertyDefinition[] | null | undefined,
 ): MetadataValues {
-  if (!metadata) return {};
-  const allowed = new Set(properties.map((property) => property.id));
+  if (!metadata || typeof metadata !== "object") return {};
+  const list = Array.isArray(properties) ? properties : [];
+  const allowed = new Set(list.filter((property) => property?.id).map((property) => property.id));
   const picked: MetadataValues = {};
   for (const [key, value] of Object.entries(metadata)) {
     if (allowed.has(key)) {
@@ -61,11 +65,17 @@ export function pickMetadataForProperties(
   return picked;
 }
 
-export function normalizeSchema(schema: Partial<Schema>): Schema {
+export function normalizeSchema(schema: Partial<Schema> | null | undefined): Schema {
+  const nodeGroups = Array.isArray(schema?.nodeGroups) ? schema.nodeGroups : [];
   return {
-    nodeGroups: schema.nodeGroups ?? [],
-    fieldTypes: schema.fieldTypes ?? [],
-    globalProperties: schema.globalProperties ?? [],
-    timestamp: schema.timestamp ?? Date.now(),
+    nodeGroups: nodeGroups.map((group) => ({
+      ...group,
+      id: group?.id ?? `group_${Date.now()}`,
+      name: group?.name ?? "Group",
+      properties: Array.isArray(group?.properties) ? group.properties : [],
+    })),
+    fieldTypes: Array.isArray(schema?.fieldTypes) ? schema.fieldTypes : [],
+    globalProperties: Array.isArray(schema?.globalProperties) ? schema.globalProperties : [],
+    timestamp: schema?.timestamp ?? Date.now(),
   };
 }

@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { MetadataValues, PropertyDefinition } from "@/lib/storage";
 import type { ScopedProperty } from "@/lib/schemaProperties";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
+import { normalizeSidebarProperties } from "@/lib/sidebarSelection";
 
 export type MetadataSelectionContext = "node" | "field";
 
@@ -17,11 +18,9 @@ interface MetadataSidebarProps {
   nodeLabel: string | null;
   fieldId?: string | null;
   fieldLabel?: string | null;
-  /** Metadata for the active context only (node.data.metadata or field.metadata). */
-  metadata: MetadataValues | null;
-  /** Properties for the active context only — node group OR field attributes, never both. */
-  properties: ScopedProperty[];
-  selectionContext: MetadataSelectionContext;
+  metadata?: MetadataValues | null;
+  properties?: ScopedProperty[] | null;
+  selectionContext?: MetadataSelectionContext | null;
   onUpdateMetadata: (nodeId: string, metadata: MetadataValues) => void;
   onRenameNode?: (nodeId: string, label: string) => void;
   onRenameField?: (nodeId: string, fieldId: string, label: string) => void;
@@ -29,16 +28,23 @@ interface MetadataSidebarProps {
   onDeleteNode?: () => void;
 }
 
+function safeMetadata(value: unknown): MetadataValues {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return { ...(value as MetadataValues) };
+}
+
 export function MetadataSidebar({
   isOpen,
   onClose,
   nodeId,
   nodeLabel,
-  fieldId,
-  fieldLabel,
-  metadata,
-  properties,
-  selectionContext,
+  fieldId = null,
+  fieldLabel = null,
+  metadata: metadataProp,
+  properties: propertiesProp,
+  selectionContext: selectionContextProp,
   onUpdateMetadata,
   onRenameNode,
   onRenameField,
@@ -48,35 +54,46 @@ export function MetadataSidebar({
   const [localMetadata, setLocalMetadata] = useState<MetadataValues>({});
   const [nameDraft, setNameDraft] = useState("");
 
+  const metadata = useMemo(() => safeMetadata(metadataProp), [metadataProp]);
+  const properties = useMemo(
+    () => normalizeSidebarProperties(propertiesProp),
+    [propertiesProp],
+  );
+
+  const selectionContext: MetadataSelectionContext =
+    selectionContextProp === "field" && fieldId ? "field" : "node";
   const isFieldContext = selectionContext === "field";
+
   const sectionTitle = isFieldContext
-    ? SCHEMA_SCOPE_LABELS.group.title
-    : SCHEMA_SCOPE_LABELS.global.title;
+    ? SCHEMA_SCOPE_LABELS?.group?.title ?? "Field Attributes"
+    : SCHEMA_SCOPE_LABELS?.global?.title ?? "Node Group Attributes";
   const SectionIcon = isFieldContext ? Layers : Globe;
+  const emptyScopeLabel = isFieldContext
+    ? SCHEMA_SCOPE_LABELS?.group?.short ?? "field"
+    : SCHEMA_SCOPE_LABELS?.global?.short ?? "node group";
 
   const allowedPropertyIds = useMemo(
-    () => new Set(properties.filter((property) => property?.id).map((property) => property.id)),
+    () => new Set(properties.map((property) => property.id)),
     [properties],
   );
 
   useEffect(() => {
     const next: MetadataValues = {};
-    if (metadata && typeof metadata === "object") {
-      for (const [key, value] of Object.entries(metadata)) {
-        if (allowedPropertyIds.has(key)) {
-          next[key] = value;
-        }
+    for (const [key, value] of Object.entries(metadata)) {
+      if (allowedPropertyIds.has(key)) {
+        next[key] = value;
       }
     }
     setLocalMetadata(next);
   }, [metadata, allowedPropertyIds]);
 
   useEffect(() => {
-    setNameDraft(isFieldContext ? fieldLabel ?? "" : nodeLabel ?? "");
-  }, [isFieldContext, fieldLabel, nodeLabel]);
+    const nextName = isFieldContext ? fieldLabel ?? "" : nodeLabel ?? "";
+    setNameDraft(nextName);
+  }, [isFieldContext, fieldLabel, nodeLabel, fieldId, nodeId]);
 
   const handleChange = (propertyId: string, value: unknown) => {
-    if (!allowedPropertyIds.has(propertyId)) return;
+    if (!propertyId || !allowedPropertyIds.has(propertyId)) return;
     const updated = { ...localMetadata, [propertyId]: value };
     setLocalMetadata(updated);
     if (nodeId) {
@@ -88,17 +105,25 @@ export function MetadataSidebar({
     if (!nodeId) return;
     const next = nameDraft.trim();
     if (!next) {
-      setNameDraft(isFieldContext ? fieldLabel || "" : nodeLabel || "");
+      setNameDraft(isFieldContext ? fieldLabel ?? "" : nodeLabel ?? "");
       return;
     }
     if (isFieldContext && fieldId && onRenameField) {
       onRenameField(nodeId, fieldId, next);
-    } else if (!isFieldContext && onRenameNode) {
+      return;
+    }
+    if (!isFieldContext && onRenameNode) {
       onRenameNode(nodeId, next);
     }
   };
 
-  if (!isOpen || !nodeId) return null;
+  if (!isOpen || !nodeId) {
+    return null;
+  }
+
+  if (isFieldContext && !fieldId) {
+    return null;
+  }
 
   return (
     <div className="fixed right-0 top-14 bottom-0 w-80 bg-card border-l border-border shadow-lg z-20 flex flex-col">
@@ -157,10 +182,10 @@ export function MetadataSidebar({
           </Button>
         )}
 
-        {properties.filter((property) => property?.id).length === 0 ? (
+        {properties.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No {isFieldContext ? SCHEMA_SCOPE_LABELS.group.short : SCHEMA_SCOPE_LABELS.global.short}{" "}
-            attributes defined. Open the schema editor on this node group to add them.
+            No {emptyScopeLabel} attributes defined. Open the schema editor on this node group to add
+            them.
           </p>
         ) : (
           <MetadataSection
@@ -189,20 +214,25 @@ function MetadataSection({
   localMetadata: MetadataValues;
   onChange: (propertyId: string, value: unknown) => void;
 }) {
+  const safeProperties = Array.isArray(properties) ? properties : [];
+
   return (
     <div className="border-t border-border pt-4">
       <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
         {icon}
         {title}
       </h3>
-      {properties.filter((property) => property?.id).map((property) => (
-        <PropertyField
-          key={property.id}
-          property={property}
-          value={localMetadata[property.id] ?? property.defaultValue ?? ""}
-          onChange={(value) => onChange(property.id, value)}
-        />
-      ))}
+      {safeProperties.map((property) => {
+        if (!property?.id) return null;
+        return (
+          <PropertyField
+            key={property.id}
+            property={property}
+            value={localMetadata?.[property.id] ?? property?.defaultValue ?? ""}
+            onChange={(value) => onChange(property.id, value)}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -216,38 +246,53 @@ function PropertyField({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
-  const propertyName = property.name?.trim() || "Attribute";
+  if (!property?.id) return null;
 
-  switch (property.type ?? "text") {
+  const propertyName = property?.name?.trim() || "Attribute";
+  const fieldType = property?.type ?? "text";
+
+  switch (fieldType) {
     case "textarea":
       return (
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
             {propertyName}
-            {property.required && <span className="text-destructive ml-1">*</span>}
+            {property?.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Textarea
             placeholder={`Enter ${propertyName.toLowerCase()}...`}
-            value={String(value || "")}
+            value={String(value ?? "")}
             onChange={(e) => onChange(e.target.value)}
             className="min-h-[80px] text-sm"
           />
         </div>
       );
     case "select": {
-      const options = property.options ?? [];
+      const options = (Array.isArray(property?.options) ? property.options : []).filter(
+        (option): option is string => typeof option === "string" && option.length > 0,
+      );
       const rawValue = value === undefined || value === null ? "" : String(value);
       const selectValue = options.includes(rawValue) ? rawValue : undefined;
+
+      if (options.length === 0) {
+        return (
+          <div className="space-y-2 mb-4">
+            <label className="text-xs font-medium">{propertyName}</label>
+            <p className="text-xs text-muted-foreground">No options configured for this attribute.</p>
+          </div>
+        );
+      }
+
       return (
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
             {propertyName}
-            {property.required && <span className="text-destructive ml-1">*</span>}
+            {property?.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Select
+            key={`${property.id}-${selectValue ?? "unset"}`}
             value={selectValue}
             onValueChange={onChange}
-            disabled={options.length === 0}
           >
             <SelectTrigger className="text-sm">
               <SelectValue placeholder={`Select ${propertyName.toLowerCase()}`} />
@@ -268,11 +313,11 @@ function PropertyField({
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
             {propertyName}
-            {property.required && <span className="text-destructive ml-1">*</span>}
+            {property?.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Input
             type="date"
-            value={String(value || "")}
+            value={String(value ?? "")}
             onChange={(e) => onChange(e.target.value)}
             className="text-sm"
           />
@@ -283,12 +328,12 @@ function PropertyField({
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
             {propertyName}
-            {property.required && <span className="text-destructive ml-1">*</span>}
+            {property?.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Input
             type="number"
             placeholder={`Enter ${propertyName.toLowerCase()}...`}
-            value={String(value || "")}
+            value={String(value ?? "")}
             onChange={(e) => onChange(e.target.value)}
             className="text-sm"
           />
@@ -300,7 +345,7 @@ function PropertyField({
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
             {propertyName}
-            {property.required && <span className="text-destructive ml-1">*</span>}
+            {property?.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Select
             value={boolValue ? "true" : "false"}
@@ -322,11 +367,11 @@ function PropertyField({
         <div className="space-y-2 mb-4">
           <label className="text-xs font-medium">
             {propertyName}
-            {property.required && <span className="text-destructive ml-1">*</span>}
+            {property?.required && <span className="text-destructive ml-1">*</span>}
           </label>
           <Input
             placeholder={`Enter ${propertyName.toLowerCase()}...`}
-            value={String(value || "")}
+            value={String(value ?? "")}
             onChange={(e) => onChange(e.target.value)}
             className="text-sm"
           />

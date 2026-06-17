@@ -99,7 +99,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
 
   const accentColor =
     data.color ||
-    schema.nodeGroups.find((group) => group.id === data.nodeGroupId)?.color ||
+    schema?.nodeGroups?.find((group) => group?.id === data.nodeGroupId)?.color ||
     "#3b82f6";
   const headerTextColor = getContrastTextColor(accentColor);
   const HeaderIcon = getNodeIcon(data.icon);

@@ -65,6 +65,7 @@ import { LineageProvider, type LineageContextValue } from "@/contexts/LineageCon
 import { NodeCanvasProvider, type NodeCanvasContextValue } from "@/contexts/NodeCanvasContext";
 import { buildMarker } from "@/lib/edgeMarkers";
 import { getNodeGroupProperties, getFieldProperties, pickMetadataForProperties, normalizeSchema } from "@/lib/schemaProperties";
+import { resolveSidebarSelection } from "@/lib/sidebarSelection";
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
 import { createDrawingNode } from "@/lib/createDrawingNode";
 import { createContainerNode } from "@/lib/createContainerNode";
@@ -154,6 +155,27 @@ function InnerCanvas() {
   const pendingViewportRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [edgeSettingsOpen, setEdgeSettingsOpen] = useState(false);
+  const clearMetadataSelection = useCallback(() => {
+    setSelectedNodeId(null);
+    setSelectedFieldId(null);
+    setSelectedNodeLabel(null);
+    setSelectedFieldLabel(null);
+    setSelectedNodeMetadata(null);
+    setSelectedFieldMetadata(null);
+    setSidebarOpen(false);
+  }, []);
+
+  const sidebarSelection = useMemo(
+    () => resolveSidebarSelection(nodes, schema, selectedNodeId, selectedFieldId),
+    [nodes, schema, selectedNodeId, selectedFieldId],
+  );
+
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    if (!sidebarSelection) {
+      clearMetadataSelection();
+    }
+  }, [selectedNodeId, sidebarSelection, clearMetadataSelection]);
   const { getIntersectingNodes } = useReactFlow();
   const connectEndPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const lastPointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -897,19 +919,23 @@ function InnerCanvas() {
 
   const handleFieldSelect = useCallback(
     (nodeId: string, fieldId: string) => {
-      const node = nodes.find((item) => item.id === nodeId);
-      const nodeData = (node?.data ?? {}) as SystemNodeData;
-      const field = nodeData.fields?.find((item) => item.id === fieldId);
+      const node = nodes.find((item) => item?.id === nodeId);
+      if (!node || node.type !== "system") return;
+
+      const nodeData = (node.data ?? {}) as SystemNodeData;
+      const fields = Array.isArray(nodeData.fields) ? nodeData.fields : [];
+      const field = fields.find((item) => item?.id === fieldId);
+      if (!field) return;
 
       clearEdgeSelection();
       setLineageAnchor({ nodeId, fieldId });
       setSelectedNodeId(nodeId);
       setSelectedFieldId(fieldId);
-      setSelectedNodeLabel(nodeData.label ?? null);
-      setSelectedFieldLabel(field?.label ?? null);
+      setSelectedNodeLabel(typeof nodeData.label === "string" ? nodeData.label : null);
+      setSelectedFieldLabel(typeof field.label === "string" ? field.label : null);
       setSelectedNodeMetadata(null);
       setSelectedFieldMetadata(
-        field?.metadata && typeof field.metadata === "object" ? { ...field.metadata } : {},
+        field.metadata && typeof field.metadata === "object" ? { ...field.metadata } : {},
       );
       setSidebarOpen(true);
     },
@@ -944,6 +970,7 @@ function InnerCanvas() {
         setSelectedFieldId(null);
         setSelectedFieldLabel(null);
         setSelectedFieldMetadata(null);
+        setSidebarOpen(false);
       }
       if (lineageAnchor?.fieldId === fieldId && lineageAnchor.nodeId === nodeId) {
         setLineageAnchor(null);
@@ -1002,13 +1029,7 @@ function InnerCanvas() {
       const idSet = new Set(ids);
       setEdges((eds) => eds.filter((e) => !idSet.has(e.source) && !idSet.has(e.target)));
       if (selectedNodeId && idSet.has(selectedNodeId)) {
-        setSelectedNodeId(null);
-        setSelectedFieldId(null);
-        setSelectedNodeLabel(null);
-        setSelectedFieldLabel(null);
-        setSelectedNodeMetadata(null);
-        setSelectedFieldMetadata(null);
-        setSidebarOpen(false);
+        clearMetadataSelection();
       }
       if (lineageAnchor && idSet.has(lineageAnchor.nodeId)) {
         setLineageAnchor(null);
@@ -1017,7 +1038,7 @@ function InnerCanvas() {
         setActiveTouchpointId(null);
       }
     },
-    [setEdges, selectedNodeId, lineageAnchor, activeTouchpointId],
+    [setEdges, selectedNodeId, lineageAnchor, activeTouchpointId, clearMetadataSelection],
   );
 
   const handleUpdateNodeData = useCallback(
@@ -1104,13 +1125,19 @@ function InnerCanvas() {
       }
 
       if (
-        node.type === "textNode" ||
-        node.type === "shapeNode" ||
-        node.type === "stickyNote" ||
-        node.type === "container" ||
-        node.type === "customObject"
+        node.type !== "system"
       ) {
-        setSidebarOpen(false);
+        if (
+          node.type === "textNode" ||
+          node.type === "shapeNode" ||
+          node.type === "stickyNote" ||
+          node.type === "container" ||
+          node.type === "customObject"
+        ) {
+          clearMetadataSelection();
+          clearEdgeSelection();
+          return;
+        }
         clearEdgeSelection();
         return;
       }
@@ -1125,24 +1152,12 @@ function InnerCanvas() {
         nodeData.metadata && typeof nodeData.metadata === "object" ? { ...nodeData.metadata } : {},
       );
       setSelectedFieldMetadata(null);
-      setSidebarOpen(node.type === "system");
+      setSidebarOpen(true);
     },
-    [clearEdgeSelection],
+    [clearEdgeSelection, clearMetadataSelection],
   );
 
-  const sidebarSelectionContext = selectedFieldId ? ("field" as const) : ("node" as const);
-
-  const selectedSidebarProperties = useMemo(() => {
-    if (!selectedNodeId) return [];
-    const node = nodes.find((n) => n.id === selectedNodeId);
-    if (!node) return [];
-
-    const nodeGroupId = (node.data as SystemNodeData)?.nodeGroupId;
-    if (selectedFieldId) {
-      return getFieldProperties(schema, nodeGroupId);
-    }
-    return getNodeGroupProperties(schema);
-  }, [selectedNodeId, selectedFieldId, nodes, schema]);
+  const sidebarSelectionContext = sidebarSelection?.selectionContext ?? "node";
 
   const handleDeleteGroup = useCallback(
     (groupId: string) => {
@@ -1264,15 +1279,9 @@ function InnerCanvas() {
   const onPaneClick = useCallback(() => {
     setActiveTouchpointId(null);
     setLineageAnchor(null);
-    setSelectedNodeId(null);
-    setSelectedFieldId(null);
-    setSelectedFieldLabel(null);
-    setSelectedFieldMetadata(null);
-    setSelectedNodeLabel(null);
-    setSelectedNodeMetadata(null);
-    setSidebarOpen(false);
+    clearMetadataSelection();
     clearEdgeSelection();
-  }, [clearEdgeSelection]);
+  }, [clearEdgeSelection, clearMetadataSelection]);
 
   const activeTouchpointLabel = activeTouchpointId
     ? (nodes.find((n) => n.id === activeTouchpointId)?.data as { label?: string } | undefined)?.label
@@ -1993,24 +2002,28 @@ function InnerCanvas() {
       />
 
       <MetadataSidebar
-        isOpen={sidebarOpen}
+        isOpen={sidebarOpen && Boolean(sidebarSelection)}
         onClose={() => setSidebarOpen(false)}
-        nodeId={selectedNodeId}
-        nodeLabel={selectedNodeLabel}
-        fieldId={selectedFieldId}
-        fieldLabel={selectedFieldLabel}
-        metadata={(selectedFieldId ? selectedFieldMetadata : selectedNodeMetadata) ?? {}}
-        properties={selectedSidebarProperties}
+        nodeId={sidebarSelection?.nodeId ?? null}
+        nodeLabel={sidebarSelection?.nodeLabel ?? null}
+        fieldId={sidebarSelection?.fieldId ?? null}
+        fieldLabel={sidebarSelection?.fieldLabel ?? null}
+        metadata={sidebarSelection?.metadata ?? {}}
+        properties={sidebarSelection?.properties ?? []}
         selectionContext={sidebarSelectionContext}
         onUpdateMetadata={
-          selectedFieldId
-            ? (nodeId, metadata) => handleUpdateFieldMetadata(nodeId, selectedFieldId, metadata)
+          sidebarSelection?.fieldId
+            ? (nodeId, metadata) => handleUpdateFieldMetadata(nodeId, sidebarSelection.fieldId!, metadata)
             : handleUpdateMetadata
         }
         onRenameNode={handleRenameNode}
         onRenameField={handleRenameField}
         onDeleteField={handleDeleteField}
-        onDeleteNode={selectedNodeId && !selectedFieldId ? () => handleDeleteNode(selectedNodeId) : undefined}
+        onDeleteNode={
+          sidebarSelection && !sidebarSelection.fieldId
+            ? () => handleDeleteNode(sidebarSelection.nodeId)
+            : undefined
+        }
       />
     </div>
   );

@@ -31,9 +31,10 @@ export function getFieldTableColumns(
 export function formatFieldCellValue(
   metadata: MetadataValues | undefined,
   propertyId: string,
-  properties: PropertyDefinition[],
+  properties: PropertyDefinition[] | null | undefined,
 ): string {
-  const property = properties.find((item) => item.id === propertyId);
+  const list = Array.isArray(properties) ? properties : [];
+  const property = list.find((item) => item?.id === propertyId);
   if (!property) return "—";
 
   const value = metadata?.[propertyId];
