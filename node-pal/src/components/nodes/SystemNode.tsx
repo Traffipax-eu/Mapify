@@ -16,8 +16,6 @@ import { useLineage } from "@/contexts/LineageContext";
 import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
 import { formatFieldCellValue, getFieldTableColumns } from "@/lib/fieldMetadata";
 import { getNodeGroupProperties, getFieldProperties } from "@/lib/schemaProperties";
-import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
-import { getNodeMetadataDisplayItems } from "@/lib/nodeMetadataDisplay";
 import {
   createSection,
   DEFAULT_SECTION_ID,
@@ -33,7 +31,7 @@ import {
   parseFieldConnectionDrag,
   serializeFieldConnectionDrag,
 } from "@/lib/fieldConnectionDnD";
-import { PlusHandle } from "./PlusHandle";
+import { SmartHoverAttributes } from "@/components/SmartHoverAttributes";
 
 export type Field = {
   id: string;
@@ -85,7 +83,6 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const tableColumns = getFieldTableColumns(schema, data.nodeGroupId, data.visibleColumns);
   const nodeGroupProperties = getNodeGroupProperties(schema);
   const fieldProperties = getFieldProperties(schema, data.nodeGroupId);
-  const nodeMetadataItems = getNodeMetadataDisplayItems(data.metadata, nodeGroupProperties);
 
   const [showSettings, setShowSettings] = useState(false);
   const [newField, setNewField] = useState("");
@@ -206,8 +203,6 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     gridTemplateColumns: `minmax(100px, 1.2fr) ${tableColumns.map(() => "minmax(72px, 1fr)").join(" ")} 52px`,
   };
 
-  const visibleMetadataItems = nodeMetadataItems.filter((item) => !item.isEmpty);
-
   return (
     <div
       className={`system-node ${selected ? "system-node--selected" : ""} ${
@@ -260,7 +255,10 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
         </div>
       )}
 
-      <div
+      <SmartHoverAttributes
+        title={data.label ?? "System"}
+        metadata={data.metadata}
+        properties={nodeGroupProperties}
         className={`system-node__header system-node__header--accent ${collapsed ? "system-node__header--collapsed" : ""}`}
         style={
           {
@@ -335,22 +333,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
-      </div>
-
-      {!collapsed && visibleMetadataItems.length > 0 && (
-        <div className="system-node__meta-strip nodrag nopan" onPointerDown={stopPointer}>
-          {visibleMetadataItems.map((item) => (
-            <div
-              key={item.id}
-              className={`system-node__meta-chip system-node__meta-chip--${item.scope}`}
-              title={`${item.name}: ${item.value}`}
-            >
-              <span className="system-node__meta-chip-label">{item.name}</span>
-              <span className="system-node__meta-chip-value">{item.value}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      </SmartHoverAttributes>
 
       {!collapsed && (
         <div className="system-node__body nodrag nopan nowheel" onPointerDown={stopPointer}>
@@ -621,10 +604,16 @@ function FieldRow({
 
   if (variant === "compact") {
     return (
-      <div
+      <SmartHoverAttributes
+        title={field.label}
+        metadata={field.metadata}
+        properties={fieldProperties}
         className={`system-node__field-list-item relative ${isActive ? "is-active" : ""} ${
           isFaded ? "is-faded" : ""
         }`}
+      >
+      <div
+        className="system-node__field-list-item-inner"
         draggable
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
@@ -635,12 +624,19 @@ function FieldRow({
         <FieldConnectionAnchors fieldId={field.id} />
         <span className="system-node__field-name">{field.label}</span>
       </div>
+      </SmartHoverAttributes>
     );
   }
 
   return (
-    <div
+    <SmartHoverAttributes
+      title={field.label}
+      metadata={field.metadata}
+      properties={fieldProperties}
       className={`system-node__table-row relative ${isActive ? "is-active" : ""} ${isFaded ? "is-faded" : ""}`}
+    >
+    <div
+      className="system-node__table-row-inner"
       style={tableGridStyle}
       draggable
       onDragStart={handleDragStart}
@@ -686,6 +682,7 @@ function FieldRow({
         </button>
       </div>
     </div>
+    </SmartHoverAttributes>
   );
 }
 

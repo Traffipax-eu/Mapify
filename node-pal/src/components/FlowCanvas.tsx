@@ -64,7 +64,7 @@ import { decryptData, prepareEncryptedCloudPayload } from "@/utils/encryption";
 import { LineageProvider, type LineageContextValue } from "@/contexts/LineageContext";
 import { NodeCanvasProvider, type NodeCanvasContextValue } from "@/contexts/NodeCanvasContext";
 import { buildMarker } from "@/lib/edgeMarkers";
-import { getNodeGroupProperties, getFieldProperties, pickMetadataForProperties, normalizeSchema } from "@/lib/schemaProperties";
+import { sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
 import { resolveSidebarSelection } from "@/lib/sidebarSelection";
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
 import { createDrawingNode } from "@/lib/createDrawingNode";
@@ -1200,8 +1200,7 @@ function InnerCanvas() {
 
   const handleUpdateMetadata = useCallback(
     (nodeId: string, metadata: MetadataValues) => {
-      const nodeGroupProps = getNodeGroupProperties(schema);
-      const sanitized = pickMetadataForProperties(metadata, nodeGroupProps);
+      const sanitized = sanitizeFreeformMetadata(metadata);
 
       setNodes((nds) =>
         nds.map((n) =>
@@ -1212,15 +1211,12 @@ function InnerCanvas() {
       );
       setSelectedNodeMetadata(sanitized);
     },
-    [schema, setNodes],
+    [setNodes],
   );
 
   const handleUpdateFieldMetadata = useCallback(
     (nodeId: string, fieldId: string, metadata: MetadataValues) => {
-      const node = nodes.find((n) => n.id === nodeId);
-      const nodeGroupId = (node?.data as SystemNodeData | undefined)?.nodeGroupId;
-      const fieldProps = getFieldProperties(schema, nodeGroupId);
-      const sanitized = pickMetadataForProperties(metadata, fieldProps);
+      const sanitized = sanitizeFreeformMetadata(metadata);
 
       setNodes((nds) =>
         nds.map((n) => {
@@ -1239,7 +1235,7 @@ function InnerCanvas() {
       );
       setSelectedFieldMetadata(sanitized);
     },
-    [nodes, schema, setNodes],
+    [setNodes],
   );
 
   const nodeCanvasValue = useMemo<NodeCanvasContextValue>(

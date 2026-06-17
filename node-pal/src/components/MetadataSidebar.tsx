@@ -1,13 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
-import { X, Trash2, Globe, Layers } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { MetadataValues, PropertyDefinition } from "@/lib/storage";
+import type { MetadataValues } from "@/lib/storage";
 import type { ScopedProperty } from "@/lib/schemaProperties";
-import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
-import { normalizeSidebarProperties } from "@/lib/sidebarSelection";
+import { MetadataKeyValueGrid } from "@/components/MetadataKeyValueGrid";
 
 export type MetadataSelectionContext = "node" | "field";
 
@@ -51,61 +48,81 @@ export function MetadataSidebar({
   onDeleteField,
   onDeleteNode,
 }: MetadataSidebarProps) {
-  const [localMetadata, setLocalMetadata] = useState<MetadataValues>({});
-  const [nameDraft, setNameDraft] = useState("");
-
-  const metadata = useMemo(() => safeMetadata(metadataProp), [metadataProp]);
-  const properties = useMemo(
-    () => normalizeSidebarProperties(propertiesProp),
-    [propertiesProp],
-  );
+  const metadata = safeMetadata(metadataProp);
+  const properties = Array.isArray(propertiesProp)
+    ? propertiesProp.filter((property) => property?.id)
+    : [];
 
   const selectionContext: MetadataSelectionContext =
     selectionContextProp === "field" && fieldId ? "field" : "node";
   const isFieldContext = selectionContext === "field";
 
-  const sectionTitle = isFieldContext
-    ? SCHEMA_SCOPE_LABELS?.group?.title ?? "Field Attributes"
-    : SCHEMA_SCOPE_LABELS?.global?.title ?? "Node Group Attributes";
-  const SectionIcon = isFieldContext ? Layers : Globe;
-  const emptyScopeLabel = isFieldContext
-    ? SCHEMA_SCOPE_LABELS?.group?.short ?? "field"
-    : SCHEMA_SCOPE_LABELS?.global?.short ?? "node group";
+  if (!isOpen || !nodeId) {
+    return null;
+  }
 
-  const allowedPropertyIds = useMemo(
-    () => new Set(properties.map((property) => property.id)),
-    [properties],
+  if (isFieldContext && !fieldId) {
+    return null;
+  }
+
+  const displayName = isFieldContext ? fieldLabel ?? "Field" : nodeLabel ?? "System";
+
+  return (
+    <MetadataSidebarContent
+      key={`${nodeId}-${fieldId ?? "node"}`}
+      nodeId={nodeId}
+      fieldId={fieldId}
+      isFieldContext={isFieldContext}
+      displayName={displayName}
+      metadata={metadata}
+      properties={properties}
+      onClose={onClose}
+      onUpdateMetadata={onUpdateMetadata}
+      onRenameNode={onRenameNode}
+      onRenameField={onRenameField}
+      onDeleteField={onDeleteField}
+      onDeleteNode={onDeleteNode}
+    />
   );
+}
+
+function MetadataSidebarContent({
+  nodeId,
+  fieldId,
+  isFieldContext,
+  displayName,
+  metadata,
+  properties,
+  onClose,
+  onUpdateMetadata,
+  onRenameNode,
+  onRenameField,
+  onDeleteField,
+  onDeleteNode,
+}: {
+  nodeId: string;
+  fieldId: string | null;
+  isFieldContext: boolean;
+  displayName: string;
+  metadata: MetadataValues;
+  properties: ScopedProperty[];
+  onClose: () => void;
+  onUpdateMetadata: (nodeId: string, metadata: MetadataValues) => void;
+  onRenameNode?: (nodeId: string, label: string) => void;
+  onRenameField?: (nodeId: string, fieldId: string, label: string) => void;
+  onDeleteField?: (nodeId: string, fieldId: string) => void;
+  onDeleteNode?: () => void;
+}) {
+  const [nameDraft, setNameDraft] = useState(displayName);
 
   useEffect(() => {
-    const next: MetadataValues = {};
-    for (const [key, value] of Object.entries(metadata)) {
-      if (allowedPropertyIds.has(key)) {
-        next[key] = value;
-      }
-    }
-    setLocalMetadata(next);
-  }, [metadata, allowedPropertyIds]);
-
-  useEffect(() => {
-    const nextName = isFieldContext ? fieldLabel ?? "" : nodeLabel ?? "";
-    setNameDraft(nextName);
-  }, [isFieldContext, fieldLabel, nodeLabel, fieldId, nodeId]);
-
-  const handleChange = (propertyId: string, value: unknown) => {
-    if (!propertyId || !allowedPropertyIds.has(propertyId)) return;
-    const updated = { ...localMetadata, [propertyId]: value };
-    setLocalMetadata(updated);
-    if (nodeId) {
-      onUpdateMetadata(nodeId, updated);
-    }
-  };
+    setNameDraft(displayName);
+  }, [displayName, nodeId, fieldId]);
 
   const commitName = () => {
-    if (!nodeId) return;
     const next = nameDraft.trim();
     if (!next) {
-      setNameDraft(isFieldContext ? fieldLabel ?? "" : nodeLabel ?? "");
+      setNameDraft(displayName);
       return;
     }
     if (isFieldContext && fieldId && onRenameField) {
@@ -117,28 +134,16 @@ export function MetadataSidebar({
     }
   };
 
-  if (!isOpen || !nodeId) {
-    return null;
-  }
-
-  if (isFieldContext && !fieldId) {
-    return null;
-  }
-
   return (
-    <div className="fixed right-0 top-14 bottom-0 w-80 bg-card border-l border-border shadow-lg z-20 flex flex-col">
+    <div className="fixed right-0 top-14 bottom-0 w-80 bg-card border-l border-border shadow-lg z-20 flex flex-col metadata-sidebar">
       <div className="flex items-center justify-between p-4 border-b border-border">
-        <div>
-          <h2 className="text-sm font-semibold">
-            {isFieldContext ? "Field Properties" : "System Properties"}
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            {isFieldContext
-              ? "Field-level attributes for this column"
-              : "Node group attributes for this system"}
+        <div className="min-w-0">
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            {isFieldContext ? "Field" : "System"}
           </p>
+          <h2 className="text-sm font-semibold truncate">{displayName}</h2>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 shrink-0">
           {onDeleteNode && !isFieldContext && (
             <Button
               variant="ghost"
@@ -156,9 +161,11 @@ export function MetadataSidebar({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div className="space-y-2">
-          <label className="text-xs font-medium">{isFieldContext ? "Field name" : "Node name"}</label>
+      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {isFieldContext ? "Field name" : "System name"}
+          </label>
           <Input
             value={nameDraft}
             onChange={(e) => setNameDraft(e.target.value)}
@@ -166,15 +173,15 @@ export function MetadataSidebar({
             onKeyDown={(e) => {
               if (e.key === "Enter") commitName();
             }}
-            className="text-sm"
+            className="text-sm border-none bg-muted/40 px-2 shadow-none focus-visible:ring-1"
           />
         </div>
 
         {isFieldContext && fieldId && onDeleteField && (
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="w-full text-destructive hover:text-destructive"
+            className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
             onClick={() => onDeleteField(nodeId, fieldId)}
           >
             <Trash2 className="h-3.5 w-3.5 mr-2" />
@@ -182,200 +189,17 @@ export function MetadataSidebar({
           </Button>
         )}
 
-        {properties.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No {emptyScopeLabel} attributes defined. Open the schema editor on this node group to add
-            them.
+        <div className="space-y-2">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {isFieldContext ? "Field attributes" : "System attributes"}
           </p>
-        ) : (
-          <MetadataSection
-            title={sectionTitle}
-            icon={<SectionIcon className="h-3.5 w-3.5" />}
+          <MetadataKeyValueGrid
+            metadata={metadata}
             properties={properties}
-            localMetadata={localMetadata}
-            onChange={handleChange}
+            onChange={(next) => onUpdateMetadata(nodeId, next)}
           />
-        )}
+        </div>
       </div>
     </div>
   );
-}
-
-function MetadataSection({
-  title,
-  icon,
-  properties,
-  localMetadata,
-  onChange,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  properties: ScopedProperty[];
-  localMetadata: MetadataValues;
-  onChange: (propertyId: string, value: unknown) => void;
-}) {
-  const safeProperties = Array.isArray(properties) ? properties : [];
-
-  return (
-    <div className="border-t border-border pt-4">
-      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-        {icon}
-        {title}
-      </h3>
-      {safeProperties.map((property) => {
-        if (!property?.id) return null;
-        return (
-          <PropertyField
-            key={property.id}
-            property={property}
-            value={localMetadata?.[property.id] ?? property?.defaultValue ?? ""}
-            onChange={(value) => onChange(property.id, value)}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function PropertyField({
-  property,
-  value,
-  onChange,
-}: {
-  property: PropertyDefinition;
-  value: unknown;
-  onChange: (value: unknown) => void;
-}) {
-  if (!property?.id) return null;
-
-  const propertyName = property?.name?.trim() || "Attribute";
-  const fieldType = property?.type ?? "text";
-
-  switch (fieldType) {
-    case "textarea":
-      return (
-        <div className="space-y-2 mb-4">
-          <label className="text-xs font-medium">
-            {propertyName}
-            {property?.required && <span className="text-destructive ml-1">*</span>}
-          </label>
-          <Textarea
-            placeholder={`Enter ${propertyName.toLowerCase()}...`}
-            value={String(value ?? "")}
-            onChange={(e) => onChange(e.target.value)}
-            className="min-h-[80px] text-sm"
-          />
-        </div>
-      );
-    case "select": {
-      const options = (Array.isArray(property?.options) ? property.options : []).filter(
-        (option): option is string => typeof option === "string" && option.length > 0,
-      );
-      const rawValue = value === undefined || value === null ? "" : String(value);
-      const selectValue = options.includes(rawValue) ? rawValue : undefined;
-
-      if (options.length === 0) {
-        return (
-          <div className="space-y-2 mb-4">
-            <label className="text-xs font-medium">{propertyName}</label>
-            <p className="text-xs text-muted-foreground">No options configured for this attribute.</p>
-          </div>
-        );
-      }
-
-      return (
-        <div className="space-y-2 mb-4">
-          <label className="text-xs font-medium">
-            {propertyName}
-            {property?.required && <span className="text-destructive ml-1">*</span>}
-          </label>
-          <Select
-            key={`${property.id}-${selectValue ?? "unset"}`}
-            value={selectValue}
-            onValueChange={onChange}
-          >
-            <SelectTrigger className="text-sm">
-              <SelectValue placeholder={`Select ${propertyName.toLowerCase()}`} />
-            </SelectTrigger>
-            <SelectContent>
-              {options.map((option) => (
-                <SelectItem key={option} value={option}>
-                  {option}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      );
-    }
-    case "date":
-      return (
-        <div className="space-y-2 mb-4">
-          <label className="text-xs font-medium">
-            {propertyName}
-            {property?.required && <span className="text-destructive ml-1">*</span>}
-          </label>
-          <Input
-            type="date"
-            value={String(value ?? "")}
-            onChange={(e) => onChange(e.target.value)}
-            className="text-sm"
-          />
-        </div>
-      );
-    case "number":
-      return (
-        <div className="space-y-2 mb-4">
-          <label className="text-xs font-medium">
-            {propertyName}
-            {property?.required && <span className="text-destructive ml-1">*</span>}
-          </label>
-          <Input
-            type="number"
-            placeholder={`Enter ${propertyName.toLowerCase()}...`}
-            value={String(value ?? "")}
-            onChange={(e) => onChange(e.target.value)}
-            className="text-sm"
-          />
-        </div>
-      );
-    case "boolean": {
-      const boolValue = value === true || value === "true";
-      return (
-        <div className="space-y-2 mb-4">
-          <label className="text-xs font-medium">
-            {propertyName}
-            {property?.required && <span className="text-destructive ml-1">*</span>}
-          </label>
-          <Select
-            value={boolValue ? "true" : "false"}
-            onValueChange={(val) => onChange(val === "true")}
-          >
-            <SelectTrigger className="text-sm">
-              <SelectValue placeholder={propertyName} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="true">Yes</SelectItem>
-              <SelectItem value="false">No</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      );
-    }
-    default:
-      return (
-        <div className="space-y-2 mb-4">
-          <label className="text-xs font-medium">
-            {propertyName}
-            {property?.required && <span className="text-destructive ml-1">*</span>}
-          </label>
-          <Input
-            placeholder={`Enter ${propertyName.toLowerCase()}...`}
-            value={String(value ?? "")}
-            onChange={(e) => onChange(e.target.value)}
-            className="text-sm"
-          />
-        </div>
-      );
-  }
 }
