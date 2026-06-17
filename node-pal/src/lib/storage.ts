@@ -1,0 +1,83 @@
+// Dynamic Schema Engine Types
+
+export type PropertyType = "text" | "textarea" | "select" | "date" | "number" | "boolean";
+
+export interface PropertyDefinition {
+  id: string;
+  name: string;
+  type: PropertyType;
+  options?: string[];
+  required?: boolean;
+  defaultValue?: any;
+}
+
+export interface NodeGroupSchema {
+  id: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  properties: PropertyDefinition[];
+}
+
+export interface FieldTypeSchema {
+  id: string;
+  name: string;
+  properties: PropertyDefinition[];
+}
+
+export interface Schema {
+  id?: number;
+  /** Attributes that apply to every node and field across the application. */
+  globalProperties: PropertyDefinition[];
+  nodeGroups: NodeGroupSchema[];
+  /** @deprecated Legacy field-type schemas; metadata is now global + group-scoped. */
+  fieldTypes: FieldTypeSchema[];
+  timestamp: number;
+}
+
+// Dynamic metadata values (key-value pairs based on schema)
+export type MetadataValues = Record<string, any>;
+
+// Edge data structure for field-to-field connections
+export type EdgeMarkerStyle = "none" | "arrow" | "arrowclosed" | "circle" | "circleclosed";
+
+export type EdgePathType = "bezier" | "straight" | "step";
+export type EdgeLineStyle = "solid" | "dashed";
+
+export interface EdgeData {
+  sourceFieldId?: string | null;
+  targetFieldId?: string | null;
+  sourceNodeId?: string;
+  targetNodeId?: string;
+  label?: string;
+  pathType?: EdgePathType;
+  lineStyle?: EdgeLineStyle;
+  markerStart?: EdgeMarkerStyle;
+  markerEnd?: EdgeMarkerStyle;
+  rerouted?: boolean;
+  originalSource?: string;
+  originalTarget?: string;
+}
+
+// Graph State (nodes now use dynamic metadata)
+export interface GraphState {
+  id?: number;
+  nodes: any[];
+  edges: any[];
+  viewport?: {
+    x: number;
+    y: number;
+    zoom: number;
+  };
+  /** Serialized freehand drawing layer snapshots (data URLs). */
+  drawings?: string[];
+  timestamp: number;
+}
+
+// Default schema for new installations
+export const DEFAULT_SCHEMA: Schema = {
+  globalProperties: [],
+  nodeGroups: [],
+  fieldTypes: [],
+  timestamp: Date.now(),
+};
