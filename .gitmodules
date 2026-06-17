@@ -1,0 +1,3 @@
+[submodule "node-pal"]
+	path = node-pal
+	url = https://github.com/Traffipax-eu/node-pal.git
