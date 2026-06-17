@@ -66,6 +66,7 @@ import { NodeCanvasProvider, type NodeCanvasContextValue } from "@/contexts/Node
 import { buildMarker } from "@/lib/edgeMarkers";
 import { sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
 import { resolveSidebarSelection } from "@/lib/sidebarSelection";
+import { normalizeSchema } from "@/lib/schemaProperties";
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
 import { createDrawingNode } from "@/lib/createDrawingNode";
 import { createContainerNode } from "@/lib/createContainerNode";
@@ -80,7 +81,7 @@ import {
   sortNodesParentFirst,
 } from "@/lib/containerUtils";
 import { DEFAULT_CONNECTION_SETTINGS, type ConnectionSettings } from "@/lib/connectionSettings";
-import { normalizeConnection, type NormalizedConnection } from "@/lib/connectionUtils";
+import { normalizeConnection, parseFieldSourceId, parseFieldTargetId, type NormalizedConnection } from "@/lib/connectionUtils";
 import {
   cloneNodesForClipboard,
   duplicateNodesFromClipboard,

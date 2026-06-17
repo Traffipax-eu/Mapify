@@ -4,8 +4,6 @@ import { Button } from "@/components/ui/button";
 import type { ConnectionSettings } from "@/lib/connectionSettings";
 import { DEFAULT_CONNECTION_SETTINGS } from "@/lib/connectionSettings";
 
-import type { ConnectionSettings } from "@/lib/connectionSettings";
-
 type Props = {
   position: { x: number; y: number };
   onConfirm: (settings: ConnectionSettings) => void;
