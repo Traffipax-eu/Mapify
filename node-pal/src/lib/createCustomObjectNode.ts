@@ -2,12 +2,19 @@ import type { Node } from "reactflow";
 import type { CustomObjectId } from "@/lib/customObjects";
 import { getCustomObjectDefinition } from "@/lib/customObjects";
 import type { NodeIconId } from "@/lib/nodeIcons";
+import type { MetadataValues } from "@/lib/storage";
+import type { Field } from "@/components/nodes/SystemNode";
 
 export type CustomObjectNodeData = {
-  objectId: CustomObjectId;
+  objectId: CustomObjectId | string;
   label: string;
   accent?: string;
   iconId?: NodeIconId;
+  fields?: Field[];
+  collapsed?: boolean;
+  tableExpanded?: boolean;
+  metadata?: MetadataValues;
+  visibleColumns?: string[];
 };
 
 export function createCustomObjectNode(
@@ -27,6 +34,9 @@ export function createCustomObjectNode(
       label: overrides?.label ?? definition?.defaultName ?? "Object",
       accent: overrides?.accent ?? definition?.accent ?? "#3b82f6",
       iconId: overrides?.iconId,
+      fields: [],
+      collapsed: false,
+      metadata: {},
     },
   };
 }

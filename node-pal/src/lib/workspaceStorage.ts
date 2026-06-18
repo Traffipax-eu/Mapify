@@ -1,6 +1,5 @@
 import Dexie, { type Table } from "dexie";
 import { DEFAULT_SCHEMA, type GraphState, type Schema } from "./storage";
-import { createStarterCanvasState } from "./starterCanvas";
 
 export interface Project {
   id: string;
@@ -120,16 +119,14 @@ async function ensureDefaultWorkspace(): Promise<WorkspaceState> {
       activeSheetId: sheetId,
     };
     await workspaceDb.projects.add(project);
-    const starter = createStarterCanvasState();
     await workspaceDb.sheets.add({
       id: sheetId,
       projectId,
       name: "Sheet 1",
       order: 0,
-      nodes: starter.nodes,
-      edges: starter.edges,
-      viewport: starter.viewport,
-      schema: starter.schema,
+      nodes: [],
+      edges: [],
+      schema: { ...DEFAULT_SCHEMA, timestamp: now },
       updatedAt: now,
     });
   }
@@ -140,16 +137,14 @@ async function ensureDefaultWorkspace(): Promise<WorkspaceState> {
   if (!activeSheet) {
     const sheetId = newId("sheet");
     const now = Date.now();
-    const starter = createStarterCanvasState();
     activeSheet = {
       id: sheetId,
       projectId: project.id,
       name: "Sheet 1",
       order: 0,
-      nodes: starter.nodes,
-      edges: starter.edges,
-      viewport: starter.viewport,
-      schema: starter.schema,
+      nodes: [],
+      edges: [],
+      schema: { ...DEFAULT_SCHEMA, timestamp: now },
       updatedAt: now,
     };
     await workspaceDb.sheets.add(activeSheet);
@@ -211,16 +206,14 @@ export const workspaceStorage = {
     const sheets = await workspaceDb.sheets.where("projectId").equals(projectId).sortBy("order");
     const order = sheets.length;
     const now = Date.now();
-    const starter = createStarterCanvasState();
     const sheet: Sheet = {
       id: newId("sheet"),
       projectId,
       name: name?.trim() || `Sheet ${order + 1}`,
       order,
-      nodes: starter.nodes,
-      edges: starter.edges,
-      viewport: starter.viewport,
-      schema: starter.schema,
+      nodes: [],
+      edges: [],
+      schema: { ...DEFAULT_SCHEMA, timestamp: now },
       updatedAt: now,
     };
     await workspaceDb.sheets.add(sheet);

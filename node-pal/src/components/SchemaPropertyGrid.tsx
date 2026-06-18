@@ -21,26 +21,29 @@ type EditingTarget = { propertyId: string; field: "name" | "type" | "options" } 
 
 export function SchemaPropertyGrid({ properties, onChange }: Props) {
   const safeProperties = Array.isArray(properties) ? properties : [];
+  const propertiesRef = useRef(safeProperties);
+  propertiesRef.current = safeProperties;
+
   const [editing, setEditing] = useState<EditingTarget>(null);
   const pendingFocusRef = useRef<"name" | "type" | "options" | null>(null);
 
   const updateProperty = useCallback(
     (propertyId: string, patch: Partial<PropertyDefinition>) => {
       onChange(
-        safeProperties.map((property) =>
+        propertiesRef.current.map((property) =>
           property.id === propertyId ? { ...property, ...patch } : property,
         ),
       );
     },
-    [onChange, safeProperties],
+    [onChange],
   );
 
   const removeProperty = useCallback(
     (propertyId: string) => {
-      onChange(safeProperties.filter((property) => property.id !== propertyId));
+      onChange(propertiesRef.current.filter((property) => property.id !== propertyId));
       setEditing(null);
     },
-    [onChange, safeProperties],
+    [onChange],
   );
 
   const addProperty = useCallback(() => {
@@ -49,10 +52,10 @@ export function SchemaPropertyGrid({ properties, onChange }: Props) {
       name: "",
       type: "text",
     };
-    onChange([...safeProperties, property]);
+    onChange([...propertiesRef.current, property]);
     pendingFocusRef.current = "name";
     setEditing({ propertyId: property.id, field: "name" });
-  }, [onChange, safeProperties]);
+  }, [onChange]);
 
   return (
     <div className="metadata-kv-grid schema-property-grid">
@@ -126,16 +129,14 @@ function SchemaPropertyRow({
     const focusField = pendingFocusRef.current ?? (isEditingName ? "name" : "options");
     pendingFocusRef.current = null;
     const target = focusField === "name" ? nameInputRef.current : optionsInputRef.current;
-    target?.focus();
-    target?.select();
+    requestAnimationFrame(() => {
+      target?.focus();
+      target?.select();
+    });
   }, [isEditingName, isEditingOptions, pendingFocusRef]);
 
   const commitName = () => {
     const nextName = nameDraft.trim();
-    if (!nextName) {
-      onRemove();
-      return;
-    }
     onUpdate({ name: nextName });
     onCancel();
   };

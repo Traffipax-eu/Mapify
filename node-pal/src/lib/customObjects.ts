@@ -51,15 +51,15 @@ export const CUSTOM_OBJECT_CATEGORIES: { id: CustomObjectCategory; label: string
 ];
 
 export const CUSTOM_OBJECT_COLOR_PALETTE = [
-  "#FF7A6E",
-  "#2EC4B6",
-  "#FFD166",
-  "#A78BFA",
-  "#FF6B9D",
-  "#4CC9F0",
-  "#06D6A0",
-  "#8338EC",
-  "#F77F00",
+  "#0067F5",
+  "#0DC5E7",
+  "#16a34a",
+  "#4f46e5",
+  "#ea580c",
+  "#7c3aed",
+  "#0d9488",
+  "#dc2626",
+  "#475569",
   "#64748b",
 ];
 
@@ -70,7 +70,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Spreadsheet workbook or XLSX export",
     defaultName: "Excel File",
     icon: FileSpreadsheet,
-    accent: "#22c55e",
+    accent: "#16a34a",
     category: "documents",
   },
   {
@@ -79,7 +79,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Delimited flat file extract",
     defaultName: "CSV File",
     icon: FileText,
-    accent: "#94A3B8",
+    accent: "#64748b",
     category: "documents",
   },
   {
@@ -88,7 +88,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Structured message or API payload",
     defaultName: "JSON Payload",
     icon: Braces,
-    accent: "#A78BFA",
+    accent: "#4f46e5",
     category: "documents",
   },
   {
@@ -97,7 +97,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Published BI report or semantic model output",
     defaultName: "Power BI Report",
     icon: BarChart3,
-    accent: "#FFD166",
+    accent: "#ea580c",
     category: "analytics",
   },
   {
@@ -106,7 +106,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Trained model artifact or scoring endpoint",
     defaultName: "ML Model",
     icon: Brain,
-    accent: "#FF6B9D",
+    accent: "#7c3aed",
     category: "analytics",
   },
   {
@@ -115,7 +115,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Operational dashboard or KPI view",
     defaultName: "Dashboard",
     icon: LayoutDashboard,
-    accent: "#4CC9F0",
+    accent: "#0067F5",
     category: "analytics",
   },
   {
@@ -124,7 +124,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Notebook, script, or batch job step",
     defaultName: "Python Script",
     icon: FileCode,
-    accent: "#2EC4B6",
+    accent: "#0d9488",
     category: "processes",
   },
   {
@@ -133,7 +133,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "REST, GraphQL, or webhook interface",
     defaultName: "API Endpoint",
     icon: Unplug,
-    accent: "#8338EC",
+    accent: "#0067F5",
     category: "processes",
   },
   {
@@ -142,7 +142,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Extract, transform, and load workflow",
     defaultName: "ETL Pipeline",
     icon: Workflow,
-    accent: "#FF7A6E",
+    accent: "#dc2626",
     category: "processes",
   },
   {
@@ -151,7 +151,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Persona, operator, or stakeholder",
     defaultName: "User Role",
     icon: UserCircle,
-    accent: "#06D6A0",
+    accent: "#475569",
     category: "actors",
   },
 ];
@@ -163,7 +163,7 @@ const LEGACY_CUSTOM_OBJECTS: Partial<CustomObjectDefinition & { id: string }>[] 
   { id: "cloud-service", label: "Cloud Service", defaultName: "Cloud", icon: Globe, accent: "#0ea5e9" },
   { id: "security-zone", label: "Security Zone", defaultName: "Security Zone", icon: Globe, accent: "#f59e0b" },
   { id: "workflow", label: "Workflow", defaultName: "Workflow", icon: Workflow, accent: "#ec4899" },
-  { id: "custom", label: "Custom Object", defaultName: "Custom Object", icon: Sparkles, accent: "#6366f1" },
+  { id: "custom", label: "Custom Object", defaultName: "Custom Object", icon: Sparkles, accent: "#0067F5" },
 ];
 
 export function isCustomObjectPayload(value: unknown): value is Extract<CustomObjectPayload, { kind: "custom-object" }> {

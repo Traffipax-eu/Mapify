@@ -10,6 +10,7 @@ export type MetadataSelectionContext = "node" | "field";
 
 interface MetadataSidebarProps {
   isOpen: boolean;
+  stackOffset?: boolean;
   onClose: () => void;
   nodeId: string | null;
   nodeLabel: string | null;
@@ -34,6 +35,7 @@ function safeMetadata(value: unknown): MetadataValues {
 
 export function MetadataSidebar({
   isOpen,
+  stackOffset = false,
   onClose,
   nodeId,
   nodeLabel,
@@ -70,6 +72,7 @@ export function MetadataSidebar({
   return (
     <MetadataSidebarContent
       key={`${nodeId}-${fieldId ?? "node"}`}
+      stackOffset={stackOffset}
       nodeId={nodeId}
       fieldId={fieldId}
       isFieldContext={isFieldContext}
@@ -93,6 +96,7 @@ function MetadataSidebarContent({
   displayName,
   metadata,
   properties,
+  stackOffset,
   onClose,
   onUpdateMetadata,
   onRenameNode,
@@ -106,6 +110,7 @@ function MetadataSidebarContent({
   displayName: string;
   metadata: MetadataValues;
   properties: ScopedProperty[];
+  stackOffset: boolean;
   onClose: () => void;
   onUpdateMetadata: (nodeId: string, metadata: MetadataValues) => void;
   onRenameNode?: (nodeId: string, label: string) => void;
@@ -135,11 +140,15 @@ function MetadataSidebarContent({
   };
 
   return (
-    <div className="fixed right-0 top-14 bottom-0 w-80 bg-card border-l border-border shadow-lg z-20 flex flex-col metadata-sidebar">
+    <div
+      className={`fixed right-0 top-14 bottom-0 w-80 bg-card border-l border-border shadow-lg z-20 flex flex-col metadata-sidebar ${
+        stackOffset ? "metadata-sidebar--stacked" : ""
+      }`}
+    >
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {isFieldContext ? "Field" : "System"}
+            {isFieldContext ? "Field" : "Node"}
           </p>
           <h2 className="text-sm font-semibold truncate">{displayName}</h2>
         </div>
@@ -164,7 +173,7 @@ function MetadataSidebarContent({
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         <div className="space-y-1.5">
           <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {isFieldContext ? "Field name" : "System name"}
+            {isFieldContext ? "Field name" : "Node name"}
           </label>
           <Input
             value={nameDraft}
@@ -191,11 +200,12 @@ function MetadataSidebarContent({
 
         <div className="space-y-2">
           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {isFieldContext ? "Field attributes" : "System attributes"}
+            {isFieldContext ? "Field attributes" : "Node attributes"}
           </p>
           <MetadataKeyValueGrid
             metadata={metadata}
             properties={properties}
+            resetKey={`${nodeId}-${fieldId ?? "node"}`}
             onChange={(next) => onUpdateMetadata(nodeId, next)}
           />
         </div>

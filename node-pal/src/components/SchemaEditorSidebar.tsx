@@ -5,10 +5,12 @@ import type { Schema, PropertyDefinition } from "@/lib/storage";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import { SchemaPropertyGrid } from "@/components/SchemaPropertyGrid";
 import type { Dispatch, SetStateAction } from "react";
+import { getCustomObjectDefinition } from "@/lib/customObjects";
 
 interface SchemaEditorSidebarProps {
   isOpen: boolean;
   groupId: string | null;
+  customObjectId: string | null;
   schema: Schema;
   onUpdateSchema: Dispatch<SetStateAction<Schema>>;
   onClose: () => void;
@@ -17,15 +19,24 @@ interface SchemaEditorSidebarProps {
 export function SchemaEditorSidebar({
   isOpen,
   groupId,
+  customObjectId,
   schema,
   onUpdateSchema,
   onClose,
 }: SchemaEditorSidebarProps) {
-  if (!isOpen || !groupId) return null;
+  if (!isOpen) return null;
 
-  const group = schema.nodeGroups.find((item) => item.id === groupId);
-  if (!group) return null;
+  const isArtifact = Boolean(customObjectId);
+  const group = !isArtifact && groupId ? schema.nodeGroups.find((item) => item.id === groupId) : null;
+  const artifact =
+    isArtifact && customObjectId
+      ? schema.customObjectSchemas?.find((item) => item.id === customObjectId)
+      : null;
+  const artifactDefinition = customObjectId ? getCustomObjectDefinition(customObjectId) : undefined;
 
+  if (!group && !artifact) return null;
+
+  const title = group?.name ?? artifact?.name ?? artifactDefinition?.label ?? "Schema";
   const globalProperties = schema.globalProperties ?? [];
 
   const updateGlobalProperties = (properties: PropertyDefinition[]) => {
@@ -36,7 +47,19 @@ export function SchemaEditorSidebar({
     }));
   };
 
-  const updateGroupProperties = (properties: PropertyDefinition[]) => {
+  const updateFieldProperties = (properties: PropertyDefinition[]) => {
+    if (isArtifact && customObjectId) {
+      onUpdateSchema((prev) => ({
+        ...prev,
+        customObjectSchemas: (prev.customObjectSchemas ?? []).map((item) =>
+          item.id === customObjectId ? { ...item, properties } : item,
+        ),
+        timestamp: Date.now(),
+      }));
+      return;
+    }
+
+    if (!groupId) return;
     onUpdateSchema((prev) => ({
       ...prev,
       nodeGroups: prev.nodeGroups.map((item) =>
@@ -48,7 +71,7 @@ export function SchemaEditorSidebar({
 
   const updateGroupName = (name: string) => {
     const trimmed = name.trim();
-    if (!trimmed) return;
+    if (!trimmed || !groupId || isArtifact) return;
     onUpdateSchema((prev) => ({
       ...prev,
       nodeGroups: prev.nodeGroups.map((item) =>
@@ -59,6 +82,7 @@ export function SchemaEditorSidebar({
   };
 
   const updateGroupColor = (color: string) => {
+    if (!groupId || isArtifact) return;
     onUpdateSchema((prev) => ({
       ...prev,
       nodeGroups: prev.nodeGroups.map((item) =>
@@ -68,12 +92,28 @@ export function SchemaEditorSidebar({
     }));
   };
 
+  const updateArtifactName = (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed || !customObjectId || !isArtifact) return;
+    onUpdateSchema((prev) => ({
+      ...prev,
+      customObjectSchemas: (prev.customObjectSchemas ?? []).map((item) =>
+        item.id === customObjectId ? { ...item, name: trimmed } : item,
+      ),
+      timestamp: Date.now(),
+    }));
+  };
+
+  const fieldProperties = isArtifact ? (artifact?.properties ?? []) : (group?.properties ?? []);
+
   return (
     <div className="schema-editor-sidebar">
       <div className="schema-editor-sidebar__header">
         <div className="min-w-0">
-          <p className="schema-editor-sidebar__eyebrow">Schema Editor</p>
-          <h2 className="schema-editor-sidebar__title">{group.name}</h2>
+          <p className="schema-editor-sidebar__eyebrow">
+            {isArtifact ? "Data Asset Schema" : "Schema Editor"}
+          </p>
+          <h2 className="schema-editor-sidebar__title">{title}</h2>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close schema editor">
           <X className="h-4 w-4" />
@@ -82,23 +122,35 @@ export function SchemaEditorSidebar({
 
       <div className="schema-editor-sidebar__body">
         <div className="schema-editor-sidebar__group-meta">
-          <label className="schema-editor-sidebar__label">Block name</label>
+          <label className="schema-editor-sidebar__label">
+            {isArtifact ? "Asset type name" : "Block name"}
+          </label>
           <Input
-            key={group.id}
-            defaultValue={group.name}
-            onBlur={(e) => updateGroupName(e.target.value)}
+            key={isArtifact ? customObjectId : group?.id}
+            defaultValue={title}
+            onBlur={(e) =>
+              isArtifact ? updateArtifactName(e.target.value) : updateGroupName(e.target.value)
+            }
             onKeyDown={(e) => {
-              if (e.key === "Enter") updateGroupName(e.currentTarget.value);
+              if (e.key === "Enter") {
+                isArtifact
+                  ? updateArtifactName(e.currentTarget.value)
+                  : updateGroupName(e.currentTarget.value);
+              }
             }}
             className="schema-editor-sidebar__input"
           />
-          <label className="schema-editor-sidebar__label">Accent color</label>
-          <input
-            type="color"
-            value={group.color || "#5b8fd9"}
-            onChange={(e) => updateGroupColor(e.target.value)}
-            className="schema-editor-sidebar__color"
-          />
+          {!isArtifact && group && (
+            <>
+              <label className="schema-editor-sidebar__label">Accent color</label>
+              <input
+                type="color"
+                value={group.color || "#5b8fd9"}
+                onChange={(e) => updateGroupColor(e.target.value)}
+                className="schema-editor-sidebar__color"
+              />
+            </>
+          )}
         </div>
 
         <section className="schema-editor-sidebar__section">
@@ -112,9 +164,13 @@ export function SchemaEditorSidebar({
         <section className="schema-editor-sidebar__section">
           <div className="schema-editor-sidebar__section-head">
             <h3>{SCHEMA_SCOPE_LABELS.group.title}</h3>
-            <p>{SCHEMA_SCOPE_LABELS.group.description}</p>
+            <p>
+              {isArtifact
+                ? "Apply only to fields in this data asset (columns and keys)."
+                : SCHEMA_SCOPE_LABELS.group.description}
+            </p>
           </div>
-          <SchemaPropertyGrid properties={group.properties ?? []} onChange={updateGroupProperties} />
+          <SchemaPropertyGrid properties={fieldProperties} onChange={updateFieldProperties} />
         </section>
       </div>
     </div>

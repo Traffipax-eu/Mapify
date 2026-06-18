@@ -1,5 +1,5 @@
 import type { MetadataValues, PropertyDefinition, Schema } from "@/lib/storage";
-import { getFieldProperties } from "@/lib/schemaProperties";
+import { getCustomObjectFieldProperties, getFieldProperties } from "@/lib/schemaProperties";
 
 export type FieldTableColumn = {
   id: string;
@@ -9,10 +9,15 @@ export type FieldTableColumn = {
 
 export function getFieldTableColumns(
   schema: Schema,
-  nodeGroupId: string | undefined,
+  scopeId: string | undefined,
   visibleColumns: string[] | undefined,
+  scope: "block" | "artifact" = "block",
 ): FieldTableColumn[] {
-  const allColumns = getFieldProperties(schema, nodeGroupId).map((property) => ({
+  const properties =
+    scope === "artifact"
+      ? getCustomObjectFieldProperties(schema, scopeId)
+      : getFieldProperties(schema, scopeId);
+  const allColumns = properties.map((property) => ({
     id: property.id,
     name: property.name,
     scope: "group" as const,

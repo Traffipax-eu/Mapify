@@ -69,8 +69,8 @@ import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } f
 import { createDrawingNode } from "@/lib/createDrawingNode";
 import { createContainerNode } from "@/lib/createContainerNode";
 import { BRAND_ASSETS } from "@/lib/brand";
-import { createStarterCanvasState, isEmptyCanvasState } from "@/lib/starterCanvas";
-import { createCustomObjectNode, createConfiguredCustomObjectNode } from "@/lib/createCustomObjectNode";
+import { ensureCustomObjectSchema } from "@/lib/customObjectSchema";
+import { createCustomObjectNode, createConfiguredCustomObjectNode, type CustomObjectNodeData } from "@/lib/createCustomObjectNode";
 import { isCustomObjectPayload, isCustomObjectTemplatePayload } from "@/lib/customObjects";
 import { CustomObjectDialog, type CustomObjectConfig } from "./CustomObjectDialog";
 import {
@@ -148,6 +148,7 @@ function InnerCanvas() {
   const [lineageAnchor, setLineageAnchor] = useState<{ nodeId: string; fieldId?: string | null } | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [schemaEditorGroupId, setSchemaEditorGroupId] = useState<string | null>(null);
+  const [schemaEditorCustomObjectId, setSchemaEditorCustomObjectId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"canvas" | "glossary">("canvas");
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -158,7 +159,10 @@ function InnerCanvas() {
   const [edgeSettingsOpen, setEdgeSettingsOpen] = useState(false);
   const closeSchemaEditor = useCallback(() => {
     setSchemaEditorGroupId(null);
+    setSchemaEditorCustomObjectId(null);
   }, []);
+
+  const schemaEditorOpen = Boolean(schemaEditorGroupId || schemaEditorCustomObjectId);
 
   const clearMetadataSelection = useCallback(() => {
     setSelectedNodeId(null);
@@ -269,19 +273,14 @@ function InnerCanvas() {
 
   const applySheetToCanvas = useCallback(
     (sheet: Sheet) => {
-      const seeded = isEmptyCanvasState(sheet.nodes as Node[] | undefined)
-        ? createStarterCanvasState()
-        : null;
-      const nodesToLoad = (seeded?.nodes ?? sheet.nodes) as Node[];
-
       setNodes(
-        nodesToLoad.map((n) => ({
+        (sheet.nodes as Node[]).map((n) => ({
           ...n,
           data: stripDisplayData(n.data as Record<string, unknown>),
         })),
       );
-      setEdges((seeded?.edges ?? sheet.edges) as Edge[]);
-      setSchema(normalizeSchema(seeded?.schema ?? sheet.schema));
+      setEdges(sheet.edges as Edge[]);
+      setSchema(normalizeSchema(sheet.schema));
       if (sheet.drawings?.length) {
         const snapshot = sheet.drawings[sheet.drawings.length - 1];
         drawingSnapshotRef.current = snapshot;
@@ -290,16 +289,15 @@ function InnerCanvas() {
         drawingSnapshotRef.current = null;
         setDrawings([]);
       }
-      const viewport = seeded?.viewport ?? sheet.viewport;
-      if (viewport && rfInstance) {
-        rfInstance.setViewport(viewport, { duration: 0 });
-      } else if (viewport) {
-        pendingViewportRef.current = viewport;
+      if (sheet.viewport && rfInstance) {
+        rfInstance.setViewport(sheet.viewport, { duration: 0 });
+      } else if (sheet.viewport) {
+        pendingViewportRef.current = sheet.viewport;
       }
       setActiveTouchpointId(null);
       setLineageAnchor(null);
       requestAnimationFrame(() => {
-        nodesToLoad.forEach((n) => updateNodeInternals(n.id));
+        (sheet.nodes as Node[]).forEach((n) => updateNodeInternals(n.id));
       });
     },
     [rfInstance, setNodes, setEdges, updateNodeInternals],
@@ -633,7 +631,9 @@ function InnerCanvas() {
       }
 
       if (isCustomObjectPayload(item)) {
+        setSchema((prev) => ensureCustomObjectSchema(prev, item.objectId));
         setNodes((nds) => nds.concat(createCustomObjectNode(item.objectId, position, nextNodeId)));
+        return;
       }
     },
     [rfInstance, setNodes],
@@ -664,6 +664,7 @@ function InnerCanvas() {
           }),
         ),
       );
+      setSchema((prev) => ensureCustomObjectSchema(prev, "custom", config.label));
       setPendingCustomObjectPosition(null);
     },
     [pendingCustomObjectPosition, rfInstance, setNodes],
@@ -938,9 +939,9 @@ function InnerCanvas() {
   const handleFieldSelect = useCallback(
     (nodeId: string, fieldId: string) => {
       const node = nodes.find((item) => item?.id === nodeId);
-      if (!node || node.type !== "system") return;
+      if (!node || (node.type !== "system" && node.type !== "customObject")) return;
 
-      const nodeData = (node.data ?? {}) as SystemNodeData;
+      const nodeData = node.data as SystemNodeData | CustomObjectNodeData;
       const fields = Array.isArray(nodeData.fields) ? nodeData.fields : [];
       const field = fields.find((item) => item?.id === fieldId);
       if (!field) return;
@@ -955,7 +956,16 @@ function InnerCanvas() {
       setSelectedFieldMetadata(
         field.metadata && typeof field.metadata === "object" ? { ...field.metadata } : {},
       );
-      closeSchemaEditor();
+
+      if (node.type === "customObject") {
+        const objectId = (nodeData as CustomObjectNodeData).objectId;
+        setSchemaEditorGroupId(null);
+        setSchemaEditorCustomObjectId(objectId);
+        setSchema((prev) => ensureCustomObjectSchema(prev, objectId, nodeData.label));
+      } else {
+        closeSchemaEditor();
+      }
+
       setSidebarOpen(true);
     },
     [nodes, clearEdgeSelection, closeSchemaEditor],
@@ -1143,31 +1153,53 @@ function InnerCanvas() {
         setLineageAnchor(null);
       }
 
-      if (node.type === "system") {
-        setLineageAnchor({ nodeId: node.id, fieldId: null });
-      } else if (node.type !== "touchpoint") {
-        setLineageAnchor(null);
-      }
-
       if (
-        node.type !== "system"
+        node.type !== "system" &&
+        node.type !== "customObject"
       ) {
         if (
           node.type === "textNode" ||
           node.type === "shapeNode" ||
           node.type === "stickyNote" ||
-          node.type === "container" ||
-          node.type === "customObject"
+          node.type === "container"
         ) {
           clearMetadataSelection();
           clearEdgeSelection();
+          closeSchemaEditor();
           return;
         }
         clearEdgeSelection();
+        closeSchemaEditor();
         return;
       }
 
       clearEdgeSelection();
+
+      if (node.type === "customObject") {
+        const customData = nodeData as CustomObjectNodeData;
+        setLineageAnchor({ nodeId: node.id, fieldId: null });
+        setSelectedNodeId(node.id);
+        setSelectedFieldId(null);
+        setSelectedNodeLabel(customData.label ?? null);
+        setSelectedFieldLabel(null);
+        setSelectedNodeMetadata(
+          customData.metadata && typeof customData.metadata === "object"
+            ? { ...customData.metadata }
+            : {},
+        );
+        setSelectedFieldMetadata(null);
+        setSchemaEditorGroupId(null);
+        setSchemaEditorCustomObjectId(customData.objectId);
+        setSchema((prev) => ensureCustomObjectSchema(prev, customData.objectId, customData.label));
+        setSidebarOpen(true);
+        return;
+      }
+
+      if (node.type === "system") {
+        setLineageAnchor({ nodeId: node.id, fieldId: null });
+      } else if (node.type !== "touchpoint") {
+        setLineageAnchor(null);
+      }
 
       setSelectedNodeId(node.id);
       setSelectedFieldId(null);
@@ -1228,11 +1260,17 @@ function InnerCanvas() {
       const sanitized = sanitizeFreeformMetadata(metadata);
 
       setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId
-            ? { ...n, data: { ...stripDisplayData(n.data as Record<string, unknown>), metadata: sanitized } }
-            : n,
-        ),
+        nds.map((n) => {
+          if (n.id !== nodeId) return n;
+          const clean = stripDisplayData(n.data as Record<string, unknown>);
+          return {
+            ...n,
+            data: {
+              ...clean,
+              metadata: sanitized,
+            },
+          };
+        }),
       );
       setSelectedNodeMetadata(sanitized);
     },
@@ -1246,12 +1284,16 @@ function InnerCanvas() {
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n;
-          const clean = stripDisplayData(n.data as SystemNodeData);
+          const clean = stripDisplayData(n.data as Record<string, unknown>) as {
+            fields?: Array<{ id: string; metadata?: MetadataValues; [key: string]: unknown }>;
+            [key: string]: unknown;
+          };
+          const fields = Array.isArray(clean.fields) ? clean.fields : [];
           return {
             ...n,
             data: {
               ...clean,
-              fields: (clean.fields ?? []).map((field) =>
+              fields: fields.map((field) =>
                 field.id === fieldId ? { ...field, metadata: sanitized } : field,
               ),
             },
@@ -1311,6 +1353,7 @@ function InnerCanvas() {
   const handleOpenSchemaEditor = useCallback((groupId: string) => {
     clearMetadataSelection();
     clearEdgeSelection();
+    setSchemaEditorCustomObjectId(null);
     setSchemaEditorGroupId(groupId);
   }, [clearMetadataSelection, clearEdgeSelection]);
 
@@ -1754,14 +1797,10 @@ function InnerCanvas() {
     <div className="mapify-app flex h-screen w-full flex-col bg-background">
       <header className="mapify-header flex h-14 shrink-0 items-center justify-between border-b border-border px-4 gap-4">
         <div className="flex items-center gap-4 min-w-0">
-          <div className="mapify-brand flex items-center gap-2.5 shrink-0">
-            <img
-              src={BRAND_ASSETS.logoMark}
-              alt=""
-              className="mapify-brand-mark h-9 w-9 object-contain"
-              aria-hidden
-            />
-            <h1 className="mapify-brand-wordmark text-lg font-extrabold tracking-tight">Mapify</h1>
+          <div className="mapify-brand flex shrink-0 items-center">
+            <span className="mapify-brand-lockup ui-bounce" aria-label="Mapify">
+              <img src={BRAND_ASSETS.logoNav} alt="" className="mapify-brand-lockup__icon" />
+            </span>
           </div>
           <div className="flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
             <Button
@@ -1904,9 +1943,9 @@ function InnerCanvas() {
                 multiSelectionKeyCode={["Meta", "Control"]}
                 fitView
                 proOptions={{ hideAttribution: true }}
-                style={{ background: "var(--canvas-bg, #faf9f6)" }}
+                style={{ background: "var(--canvas-bg, #f8fafc)" }}
               >
-            <Background gap={18} size={1.5} color="var(--canvas-dot, #c9c4b8)" />
+            <Background gap={18} size={1.5} color="var(--canvas-dot, #cbd5e1)" />
             <Controls />
             <MiniMap pannable zoomable />
             {nodes.length === 0 && (
@@ -2011,15 +2050,17 @@ function InnerCanvas() {
       />
 
       <SchemaEditorSidebar
-        isOpen={Boolean(schemaEditorGroupId)}
+        isOpen={schemaEditorOpen}
         groupId={schemaEditorGroupId}
+        customObjectId={schemaEditorCustomObjectId}
         schema={schema}
         onUpdateSchema={setSchema}
         onClose={closeSchemaEditor}
       />
 
       <MetadataSidebar
-        isOpen={sidebarOpen && Boolean(sidebarSelection) && !schemaEditorGroupId}
+        isOpen={sidebarOpen && Boolean(sidebarSelection)}
+        stackOffset={schemaEditorOpen}
         onClose={() => setSidebarOpen(false)}
         nodeId={sidebarSelection?.nodeId ?? null}
         nodeLabel={sidebarSelection?.nodeLabel ?? null}

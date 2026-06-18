@@ -26,7 +26,6 @@ import {
   shouldShowSectionSelect,
 } from "@/lib/nodeSections";
 import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons";
-import { getContrastTextColor, softenAccentColor } from "@/lib/colorContrast";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import {
   FIELD_CONNECTION_MIME,
@@ -97,12 +96,10 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     requestAnimationFrame(() => updateNodeInternals(id));
   }, [id, updateNodeInternals]);
 
-  const accentColor = softenAccentColor(
+  const accentColor =
     data.color ||
-      schema?.nodeGroups?.find((group) => group?.id === data.nodeGroupId)?.color ||
-      "#A78BFA",
-  );
-  const headerTextColor = getContrastTextColor(accentColor);
+    schema?.nodeGroups?.find((group) => group?.id === data.nodeGroupId)?.color ||
+    "#0067F5";
   const HeaderIcon = getNodeIcon(data.icon);
 
   const update = (updater: (d: SystemNodeData) => SystemNodeData) => {
@@ -303,16 +300,8 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
         title={data.label ?? "System"}
         metadata={data.metadata}
         properties={nodeGroupProperties}
-        className={`system-node__header system-node__header--accent ${collapsed ? "system-node__header--collapsed" : ""}`}
-        style={
-          {
-            ["--header-bg" as string]: accentColor,
-            color: headerTextColor,
-            "--header-fg": headerTextColor,
-            "--header-fg-muted": headerTextColor === "#ffffff" ? "rgba(255,255,255,0.75)" : "rgba(15,23,42,0.65)",
-            "--header-hover": headerTextColor === "#ffffff" ? "rgba(255,255,255,0.15)" : "rgba(15,23,42,0.08)",
-          } as React.CSSProperties
-        }
+        className={`system-node__header system-node__header--pro ${collapsed ? "system-node__header--collapsed" : ""}`}
+        style={{ ["--block-accent" as string]: accentColor } as React.CSSProperties}
       >
         <PlusHandle
           type="target"
@@ -337,7 +326,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
         >
           {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
-        <span className="system-node__header-icon nodrag nopan">
+        <span className="system-node__header-icon nodrag nopan" style={{ color: accentColor }}>
           <HeaderIcon className="h-4 w-4" />
         </span>
         <div className="system-node__header-content">
@@ -544,7 +533,7 @@ function FieldConnectionAnchors({ fieldId }: { fieldId: string }) {
   );
 }
 
-function FieldRow({
+export function FieldRow({
   nodeId,
   field,
   variant,

@@ -13,49 +13,63 @@ import {
 type Props = {
   metadata: MetadataValues;
   properties?: ScopedProperty[];
+  resetKey: string;
   onChange: (metadata: MetadataValues) => void;
 };
 
 type EditingTarget = { rowId: string; field: "key" | "value" } | null;
 
-export function MetadataKeyValueGrid({ metadata, properties = [], onChange }: Props) {
-  const [rows, setRows] = useState<AttributeRow[]>(() => metadataToAttributeRows(metadata, properties));
+export function MetadataKeyValueGrid({ metadata, properties = [], resetKey, onChange }: Props) {
+  const safeProperties = Array.isArray(properties) ? properties : [];
+  const [rows, setRows] = useState<AttributeRow[]>(() =>
+    metadataToAttributeRows(metadata, safeProperties),
+  );
   const [editing, setEditing] = useState<EditingTarget>(null);
   const pendingFocusRef = useRef<"key" | "value" | null>(null);
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
 
   useEffect(() => {
-    setRows(metadataToAttributeRows(metadata, properties));
-  }, [metadata, properties]);
+    setRows(metadataToAttributeRows(metadata, safeProperties));
+    setEditing(null);
+    pendingFocusRef.current = null;
+    // Only reset local row state when the sidebar selection changes, not on every metadata object reference change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey]);
+
+  const persistRows = useCallback(
+    (nextRows: AttributeRow[]) => {
+      rowsRef.current = nextRows;
+      setRows(nextRows);
+      onChange(attributeRowsToMetadata(nextRows, safeProperties));
+    },
+    [onChange, safeProperties],
+  );
 
   const commitRow = useCallback(
     (rowId: string, patch: Partial<AttributeRow>) => {
-      setRows((current) => {
-        const next = current.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row));
-        const withoutEmpty = next.filter((row) => row.label.trim() || row.value.trim());
-        onChange(attributeRowsToMetadata(withoutEmpty, properties));
-        return withoutEmpty;
-      });
+      const next = rowsRef.current.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row));
+      persistRows(next);
       setEditing(null);
     },
-    [onChange, properties],
+    [persistRows],
   );
 
   const removeRow = useCallback(
     (rowId: string) => {
-      setRows((current) => {
-        const next = current.filter((row) => row.rowId !== rowId);
-        onChange(attributeRowsToMetadata(next, properties));
-        return next;
-      });
+      const next = rowsRef.current.filter((row) => row.rowId !== rowId);
+      persistRows(next);
       setEditing(null);
     },
-    [onChange, properties],
+    [persistRows],
   );
 
   const addRow = useCallback(() => {
     const row = createEmptyAttributeRow();
     pendingFocusRef.current = "key";
-    setRows((current) => [...current, row]);
+    const next = [...rowsRef.current, row];
+    rowsRef.current = next;
+    setRows(next);
     setEditing({ rowId: row.rowId, field: "key" });
   }, []);
 
@@ -69,7 +83,7 @@ export function MetadataKeyValueGrid({ metadata, properties = [], onChange }: Pr
         </div>
       )}
 
-      {(rows ?? []).map((row) => (
+      {rows.map((row) => (
         <AttributeRowEditor
           key={row.rowId}
           row={row}
@@ -130,8 +144,10 @@ function AttributeRowEditor({
     const focusField = pendingFocusRef.current ?? (isEditingKey ? "key" : "value");
     pendingFocusRef.current = null;
     const target = focusField === "key" ? keyInputRef.current : valueInputRef.current;
-    target?.focus();
-    target?.select();
+    requestAnimationFrame(() => {
+      target?.focus();
+      target?.select();
+    });
   }, [isEditingKey, isEditingValue, pendingFocusRef]);
 
   const commitKey = () => {
@@ -140,11 +156,18 @@ function AttributeRowEditor({
       onRemove();
       return;
     }
-    onCommit({ label: nextKey, storageKey: nextKey || row.storageKey });
+    onCommit({
+      label: nextKey,
+      storageKey: nextKey || row.storageKey,
+    });
   };
 
   const commitValue = () => {
-    onCommit({ label: keyDraft.trim() || row.label, value: valueDraft });
+    onCommit({
+      label: keyDraft.trim() || row.label,
+      storageKey: keyDraft.trim() || row.storageKey,
+      value: valueDraft,
+    });
   };
 
   return (

@@ -19,6 +19,7 @@ import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import type { Dispatch, SetStateAction } from "react";
 import { DRAWING_TOOLS, type DrawingToolId } from "@/lib/drawingTools";
 import { CUSTOM_OBJECTS, type CustomObjectId } from "@/lib/customObjects";
+import { PRO_ICON_COLORS } from "@/lib/brand";
 
 interface Props {
   schema: Schema;
@@ -49,7 +50,7 @@ export function Sidebar({
       id: `ng_${Date.now()}`,
       name: `Block ${schema.nodeGroups.length + 1}`,
       properties: [],
-      color: "#A78BFA",
+      color: PRO_ICON_COLORS.block,
     };
 
     onUpdateSchema((prev) => ({
@@ -152,7 +153,7 @@ function GroupCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const accent = item.color || "#A78BFA";
+  const accent = item.color || PRO_ICON_COLORS.block;
 
   const onDragStart = (e: React.DragEvent, group: NodeGroupSchema) => {
     e.dataTransfer.setData("application/reactflow", JSON.stringify({ kind: "node-group", ...group }));
@@ -168,22 +169,21 @@ function GroupCard({
     <div
       draggable
       onDragStart={(e) => onDragStart(e, item)}
-      className="palette-card ui-bounce group cursor-grab rounded-2xl border-2 bg-background/80 p-3 active:cursor-grabbing"
-      style={{
-        borderColor: `${accent}66`,
-        backgroundColor: `${accent}12`,
-        boxShadow: `3px 3px 0 0 ${accent}22`,
-      }}
+      className="palette-card ui-bounce group relative cursor-grab overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-[3px_3px_0_0_rgb(15_23_42/0.06)] active:cursor-grabbing"
     >
-      <div className="flex items-start justify-between gap-2">
+      <span
+        className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-[#0067F5] to-[#0DC5E7]"
+        aria-hidden
+      />
+      <div className="flex items-start justify-between gap-2 pt-1">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold tracking-tight">{item.name}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="truncate text-sm font-bold tracking-tight text-slate-900">{item.name}</p>
+          <p className="mt-1 text-xs text-slate-500">
             {globalCount} {SCHEMA_SCOPE_LABELS.global.short} · {item.properties.length}{" "}
             {SCHEMA_SCOPE_LABELS.group.short}
           </p>
         </div>
-        <div className="flex items-center gap-0.5 shrink-0">
+        <div className="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
             onPointerDown={stop}
@@ -191,7 +191,7 @@ function GroupCard({
               stop(e);
               onEdit();
             }}
-            className="ui-bounce inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            className="ui-bounce inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
             title="Edit block schema"
           >
             <Settings className="h-3.5 w-3.5" />
@@ -203,7 +203,7 @@ function GroupCard({
               stop(e);
               onDelete();
             }}
-            className="ui-bounce inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+            className="ui-bounce inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-red-50 hover:text-red-600"
             title="Delete block and remove from canvas"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -239,8 +239,7 @@ function DrawingToolCard({
       draggable
       onDragStart={onDragStart}
       title={description}
-      className="palette-card ui-bounce flex cursor-grab flex-col items-center gap-1.5 rounded-2xl border-2 border-border bg-background/90 p-2.5 text-center active:cursor-grabbing"
-      style={{ boxShadow: "3px 3px 0 0 rgb(15 23 42 / 0.06)" }}
+      className="palette-card ui-bounce flex cursor-grab flex-col items-center gap-1.5 rounded-2xl border border-slate-200 bg-white p-2.5 text-center shadow-[3px_3px_0_0_rgb(15_23_42/0.06)] active:cursor-grabbing"
     >
       <div className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/25">
         <Icon className="h-4 w-4 text-foreground" />
@@ -276,25 +275,21 @@ function ArtifactCard({
       draggable
       onDragStart={onDragStart}
       title={description}
-      className="palette-card ui-bounce flex min-h-[76px] cursor-grab flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-background/90 p-2 text-center active:cursor-grabbing"
-      style={{
-        borderColor: `${accent}55`,
-        boxShadow: `3px 3px 0 0 ${accent}20`,
-      }}
+      className="palette-card ui-bounce flex min-h-[76px] cursor-grab flex-col items-center justify-center gap-1.5 rounded-2xl border border-slate-200 bg-white p-2 text-center shadow-[3px_3px_0_0_rgb(15_23_42/0.06)] active:cursor-grabbing"
     >
       <div
-        className="flex h-9 w-9 items-center justify-center rounded-xl border-2 bg-white/70"
-        style={{ borderColor: `${accent}44`, color: accent }}
+        className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50"
+        style={{ color: accent }}
       >
         <Icon className="h-4 w-4" />
       </div>
-      <span className="text-[10px] font-bold leading-tight tracking-tight text-foreground/90">{label}</span>
+      <span className="text-[10px] font-bold leading-tight tracking-tight text-slate-700">{label}</span>
     </div>
   );
 }
 
 function CustomObjectCreatorCard({ onOpen }: { onOpen: () => void }) {
-  const accent = "#8338EC";
+  const accent = PRO_ICON_COLORS.custom;
 
   const onDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData(
@@ -311,19 +306,15 @@ function CustomObjectCreatorCard({ onOpen }: { onOpen: () => void }) {
       onDragStart={onDragStart}
       onClick={onOpen}
       title="Pick your own icon and color"
-      className="palette-card ui-bounce flex min-h-[76px] cursor-grab flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed bg-background/90 p-2 text-center active:cursor-grabbing"
-      style={{
-        borderColor: `${accent}66`,
-        boxShadow: `3px 3px 0 0 ${accent}18`,
-      }}
+      className="palette-card ui-bounce flex min-h-[76px] cursor-grab flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-slate-300 bg-white p-2 text-center shadow-[3px_3px_0_0_rgb(15_23_42/0.04)] active:cursor-grabbing"
     >
       <div
-        className="flex h-9 w-9 items-center justify-center rounded-xl border-2 bg-white/70"
-        style={{ borderColor: `${accent}44`, color: accent }}
+        className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50"
+        style={{ color: accent }}
       >
         <Sparkles className="h-4 w-4" />
       </div>
-      <span className="text-[10px] font-bold leading-tight tracking-tight text-foreground/90">
+      <span className="text-[10px] font-bold leading-tight tracking-tight text-slate-700">
         Custom Object
       </span>
     </button>

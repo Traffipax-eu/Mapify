@@ -19,6 +19,13 @@ export interface NodeGroupSchema {
   properties: PropertyDefinition[];
 }
 
+/** Field-level schema for a data asset / custom object type (shared across instances). */
+export interface CustomObjectSchema {
+  id: string;
+  name: string;
+  properties: PropertyDefinition[];
+}
+
 export interface FieldTypeSchema {
   id: string;
   name: string;
@@ -30,6 +37,8 @@ export interface Schema {
   /** Attributes that apply to every node and field across the application. */
   globalProperties: PropertyDefinition[];
   nodeGroups: NodeGroupSchema[];
+  /** Field attribute definitions for data asset nodes, keyed by objectId. */
+  customObjectSchemas: CustomObjectSchema[];
   /** @deprecated Legacy field-type schemas; metadata is now global + group-scoped. */
   fieldTypes: FieldTypeSchema[];
   timestamp: number;
@@ -83,6 +92,7 @@ export interface GraphState {
 export const DEFAULT_SCHEMA: Schema = {
   globalProperties: [],
   nodeGroups: [],
+  customObjectSchemas: [],
   fieldTypes: [],
   timestamp: Date.now(),
 };

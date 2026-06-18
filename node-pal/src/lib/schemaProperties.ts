@@ -22,13 +22,30 @@ export function getNodeGroupProperties(schema: Schema | null | undefined): Scope
     }));
 }
 
-/** Field-level attributes for a node group — table columns and field metadata only. */
+/** Field-level attributes for a block — table columns and field metadata only. */
 export function getFieldProperties(schema: Schema | null | undefined, nodeGroupId?: string): ScopedProperty[] {
   if (!nodeGroupId) return [];
   const groupProps =
     schema?.nodeGroups?.find((group) => group?.id === nodeGroupId)?.properties ?? [];
   if (!Array.isArray(groupProps)) return [];
   return groupProps.filter(isValidProperty).map((property) => ({
+    ...property,
+    name: property.name ?? "Attribute",
+    type: property.type ?? "text",
+    scope: "group" as const,
+  }));
+}
+
+/** Field-level attributes for a data asset / custom object type. */
+export function getCustomObjectFieldProperties(
+  schema: Schema | null | undefined,
+  objectId?: string,
+): ScopedProperty[] {
+  if (!objectId) return [];
+  const objectProps =
+    schema?.customObjectSchemas?.find((item) => item?.id === objectId)?.properties ?? [];
+  if (!Array.isArray(objectProps)) return [];
+  return objectProps.filter(isValidProperty).map((property) => ({
     ...property,
     name: property.name ?? "Attribute",
     type: property.type ?? "text",
@@ -67,12 +84,21 @@ export function pickMetadataForProperties(
 
 export function normalizeSchema(schema: Partial<Schema> | null | undefined): Schema {
   const nodeGroups = Array.isArray(schema?.nodeGroups) ? schema.nodeGroups : [];
+  const customObjectSchemas = Array.isArray(schema?.customObjectSchemas)
+    ? schema.customObjectSchemas
+    : [];
   return {
     nodeGroups: nodeGroups.map((group) => ({
       ...group,
       id: group?.id ?? `group_${Date.now()}`,
       name: group?.name ?? "Block",
       properties: Array.isArray(group?.properties) ? group.properties : [],
+    })),
+    customObjectSchemas: customObjectSchemas.map((item) => ({
+      ...item,
+      id: item?.id ?? `artifact_${Date.now()}`,
+      name: item?.name ?? "Artifact",
+      properties: Array.isArray(item?.properties) ? item.properties : [],
     })),
     fieldTypes: Array.isArray(schema?.fieldTypes) ? schema.fieldTypes : [],
     globalProperties: Array.isArray(schema?.globalProperties) ? schema.globalProperties : [],

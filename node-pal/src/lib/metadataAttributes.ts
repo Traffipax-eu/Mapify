@@ -57,7 +57,6 @@ export function attributeRowsToMetadata(
   for (const row of safeRows) {
     const label = row.label.trim();
     if (!label) continue;
-    if (row.value === "") continue;
 
     let key = row.storageKey;
     if (propertyById.has(row.storageKey) && propertyById.get(row.storageKey)?.name?.trim() === label) {
@@ -77,7 +76,7 @@ export function sanitizeFreeformMetadata(metadata: MetadataValues | null | undef
   for (const [key, value] of Object.entries(metadata)) {
     const trimmed = key.trim();
     if (!trimmed) continue;
-    if (value === undefined || value === null || value === "") continue;
+    if (value === undefined || value === null) continue;
     next[trimmed] = value;
   }
   return next;
