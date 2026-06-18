@@ -47,7 +47,7 @@ export function Sidebar({
   const addGroup = () => {
     const newGroup: NodeGroupSchema = {
       id: `ng_${Date.now()}`,
-      name: `Group ${schema.nodeGroups.length + 1}`,
+      name: `Block ${schema.nodeGroups.length + 1}`,
       properties: [],
       color: "#A78BFA",
     };
@@ -64,21 +64,21 @@ export function Sidebar({
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-2 text-sm font-bold tracking-tight">
           <Database className="h-4 w-4 text-primary" />
-          <span>Node Groups</span>
+          <span>Blocks</span>
         </div>
         <button
           onClick={addGroup}
           className="palette-chip ui-bounce inline-flex items-center gap-1 rounded-xl border-2 border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground"
         >
           <Plus className="h-3.5 w-3.5" />
-          New Group
+          New Block
         </button>
       </div>
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-4">
         {schema.nodeGroups.length === 0 && (
           <p className="text-xs text-muted-foreground italic px-1">
-            No groups yet. Create one to define your schema and drag it onto the canvas.
+            No blocks yet. Create one to define your schema and drag it onto the canvas.
           </p>
         )}
         {schema.nodeGroups.map((item) => (
@@ -135,7 +135,7 @@ export function Sidebar({
       </div>
 
       <div className="mt-auto border-t border-sidebar-border p-4 text-xs text-muted-foreground">
-        Drag groups, assets, or tools onto the canvas.
+        Drag blocks, assets, or tools onto the canvas.
       </div>
     </aside>
   );
@@ -192,7 +192,7 @@ function GroupCard({
               onEdit();
             }}
             className="ui-bounce inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-foreground"
-            title="Edit group schema"
+            title="Edit block schema"
           >
             <Settings className="h-3.5 w-3.5" />
           </button>
@@ -204,7 +204,7 @@ function GroupCard({
               onDelete();
             }}
             className="ui-bounce inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
-            title="Delete group and remove from canvas"
+            title="Delete block and remove from canvas"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>

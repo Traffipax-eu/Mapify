@@ -17,7 +17,7 @@ function ContainerNodeImpl({ id, data, selected }: NodeProps<ContainerNodeData>)
   };
 
   const commitTitle = (nextTitle: string) => {
-    const label = nextTitle.trim() || "CONTAINER";
+    const label = nextTitle.trim() || "Container 1";
     setNodes((nodes) =>
       nodes.map((node) =>
         node.id === id ? { ...node, data: { ...(node.data as ContainerNodeData), label } } : node,
@@ -124,7 +124,7 @@ function ContainerNodeImpl({ id, data, selected }: NodeProps<ContainerNodeData>)
             </button>
           )}
         </div>
-        <span className="container-node__hint">Drop nodes inside to group</span>
+        <span className="container-node__hint">Drop blocks inside to organize</span>
       </div>
     </>
   );

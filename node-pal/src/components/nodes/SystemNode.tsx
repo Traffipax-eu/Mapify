@@ -292,7 +292,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
               />
             </label>
             <label className="system-node__settings-field">
-              <span>Group</span>
+              <span>Block</span>
               <input value={data.nodeGroupId || ""} readOnly className="system-node__settings-input" />
             </label>
           </div>

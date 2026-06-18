@@ -1,0 +1,22 @@
+{
+  "name": "Mapify",
+  "short_name": "Mapify",
+  "description": "Map data flows across systems with drag-and-drop diagrams, sheets, and encrypted cloud sync.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf9f6",
+  "theme_color": "#0067F5",
+  "icons": [
+    {
+      "src": "/profile.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/default.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -82,7 +82,7 @@ export function SchemaEditorSidebar({
 
       <div className="schema-editor-sidebar__body">
         <div className="schema-editor-sidebar__group-meta">
-          <label className="schema-editor-sidebar__label">Group name</label>
+          <label className="schema-editor-sidebar__label">Block name</label>
           <Input
             key={group.id}
             defaultValue={group.name}

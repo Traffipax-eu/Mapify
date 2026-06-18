@@ -20,7 +20,7 @@ export const DRAWING_TOOLS: {
 }[] = [
   { id: "textbox", label: "Textbox", description: "Transparent text area" },
   { id: "sticky", label: "Sticky Note", description: "Colored note" },
-  { id: "container", label: "Container", description: "Group nodes in a labeled region" },
+  { id: "container", label: "Container", description: "Organize blocks in a labeled region" },
 ];
 
 export function isDrawingToolPayload(value: unknown): value is DrawingToolPayload {

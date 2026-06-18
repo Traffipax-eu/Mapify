@@ -9,6 +9,7 @@ export const Route = createFileRoute("/")({
       { name: "description", content: "Map data flows across systems with drag-and-drop diagrams, sheets, and encrypted cloud sync." },
       { property: "og:title", content: "Mapify" },
       { property: "og:description", content: "Map data flows across systems with drag-and-drop diagrams, sheets, and encrypted cloud sync." },
+      { property: "og:image", content: "/default.png" },
     ],
   }),
   component: Index,

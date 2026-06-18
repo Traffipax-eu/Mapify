@@ -68,6 +68,8 @@ import { normalizeSchema } from "@/lib/schemaProperties";
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
 import { createDrawingNode } from "@/lib/createDrawingNode";
 import { createContainerNode } from "@/lib/createContainerNode";
+import { BRAND_ASSETS } from "@/lib/brand";
+import { createStarterCanvasState, isEmptyCanvasState } from "@/lib/starterCanvas";
 import { createCustomObjectNode, createConfiguredCustomObjectNode } from "@/lib/createCustomObjectNode";
 import { isCustomObjectPayload, isCustomObjectTemplatePayload } from "@/lib/customObjects";
 import { CustomObjectDialog, type CustomObjectConfig } from "./CustomObjectDialog";
@@ -267,14 +269,19 @@ function InnerCanvas() {
 
   const applySheetToCanvas = useCallback(
     (sheet: Sheet) => {
+      const seeded = isEmptyCanvasState(sheet.nodes as Node[] | undefined)
+        ? createStarterCanvasState()
+        : null;
+      const nodesToLoad = (seeded?.nodes ?? sheet.nodes) as Node[];
+
       setNodes(
-        (sheet.nodes as Node[]).map((n) => ({
+        nodesToLoad.map((n) => ({
           ...n,
           data: stripDisplayData(n.data as Record<string, unknown>),
         })),
       );
-      setEdges(sheet.edges as Edge[]);
-      setSchema(normalizeSchema(sheet.schema));
+      setEdges((seeded?.edges ?? sheet.edges) as Edge[]);
+      setSchema(normalizeSchema(seeded?.schema ?? sheet.schema));
       if (sheet.drawings?.length) {
         const snapshot = sheet.drawings[sheet.drawings.length - 1];
         drawingSnapshotRef.current = snapshot;
@@ -283,15 +290,16 @@ function InnerCanvas() {
         drawingSnapshotRef.current = null;
         setDrawings([]);
       }
-      if (sheet.viewport && rfInstance) {
-        rfInstance.setViewport(sheet.viewport, { duration: 0 });
-      } else if (sheet.viewport) {
-        pendingViewportRef.current = sheet.viewport;
+      const viewport = seeded?.viewport ?? sheet.viewport;
+      if (viewport && rfInstance) {
+        rfInstance.setViewport(viewport, { duration: 0 });
+      } else if (viewport) {
+        pendingViewportRef.current = viewport;
       }
       setActiveTouchpointId(null);
       setLineageAnchor(null);
       requestAnimationFrame(() => {
-        (sheet.nodes as Node[]).forEach((n) => updateNodeInternals(n.id));
+        nodesToLoad.forEach((n) => updateNodeInternals(n.id));
       });
     },
     [rfInstance, setNodes, setEdges, updateNodeInternals],
@@ -600,11 +608,15 @@ function InnerCanvas() {
       });
 
       if (isDrawingToolPayload(item)) {
-        const newNode =
-          item.tool === "container"
-            ? createContainerNode(position, nextNodeId)
-            : createDrawingNode(item.tool, position, nextNodeId);
-        setNodes((nds) => sortNodesParentFirst(nds.concat(newNode)));
+        if (item.tool === "container") {
+          setNodes((nds) => {
+            const newNode = createContainerNode(position, nextNodeId, nds);
+            return sortNodesParentFirst(nds.concat(newNode));
+          });
+        } else {
+          const newNode = createDrawingNode(item.tool, position, nextNodeId);
+          setNodes((nds) => sortNodesParentFirst(nds.concat(newNode)));
+        }
         return;
       }
 
@@ -1176,7 +1188,7 @@ function InnerCanvas() {
   const handleDeleteGroup = useCallback(
     (groupId: string) => {
       const group = schema.nodeGroups.find((item) => item.id === groupId);
-      if (!confirm(`Delete "${group?.name ?? "this group"}" and remove all instances from the canvas?`)) {
+      if (!confirm(`Delete "${group?.name ?? "this block"}" and remove all instances from the canvas?`)) {
         return;
       }
 
@@ -1206,7 +1218,7 @@ function InnerCanvas() {
         setSchemaEditorGroupId(null);
       }
 
-      toast.success("Node group deleted");
+      toast.success("Block deleted");
     },
     [schema.nodeGroups, nodes, cleanupAfterNodeDelete, schemaEditorGroupId],
   );
@@ -1743,8 +1755,13 @@ function InnerCanvas() {
       <header className="mapify-header flex h-14 shrink-0 items-center justify-between border-b border-border px-4 gap-4">
         <div className="flex items-center gap-4 min-w-0">
           <div className="mapify-brand flex items-center gap-2.5 shrink-0">
-            <img src="/Mapify-logo-new.png" alt="" className="h-8 w-8 object-contain" aria-hidden />
-            <h1 className="text-base font-semibold tracking-tight">Mapify</h1>
+            <img
+              src={BRAND_ASSETS.logoMark}
+              alt=""
+              className="mapify-brand-mark h-9 w-9 object-contain"
+              aria-hidden
+            />
+            <h1 className="mapify-brand-wordmark text-lg font-extrabold tracking-tight">Mapify</h1>
           </div>
           <div className="flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
             <Button
@@ -1947,7 +1964,7 @@ function InnerCanvas() {
       <NodeNameDialog
         open={nodeNameDialogOpen}
         defaultName={pendingNodeDrop?.item.name ?? ""}
-        groupName={pendingNodeDrop?.item.name}
+        blockName={pendingNodeDrop?.item.name}
         onOpenChange={(open) => {
           if (!open) cancelNodeDrop();
         }}

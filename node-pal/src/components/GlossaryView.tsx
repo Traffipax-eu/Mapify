@@ -37,7 +37,7 @@ export function GlossaryView({ nodes, schema }: GlossaryViewProps) {
       const data = node.data as SystemNodeData;
       const groupId = data.nodeGroupId ?? "ungrouped";
       const groupName =
-        schema.nodeGroups.find((group) => group.id === groupId)?.name ?? "Ungrouped";
+        schema.nodeGroups.find((group) => group.id === groupId)?.name ?? "Unassigned";
       const fields = data.fields ?? [];
 
       if (!byGroup.has(groupId)) {
@@ -86,7 +86,7 @@ export function GlossaryView({ nodes, schema }: GlossaryViewProps) {
       <div className="shrink-0 border-b border-border px-6 py-4">
         <h2 className="text-lg font-semibold">Data Dictionary Glossary</h2>
         <p className="text-sm text-muted-foreground mt-0.5">
-          {totalFields} field{totalFields === 1 ? "" : "s"} across {grouped.length} node group
+          {totalFields} field{totalFields === 1 ? "" : "s"} across {grouped.length} block
           {grouped.length === 1 ? "" : "s"}
         </p>
       </div>

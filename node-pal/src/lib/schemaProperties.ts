@@ -71,7 +71,7 @@ export function normalizeSchema(schema: Partial<Schema> | null | undefined): Sch
     nodeGroups: nodeGroups.map((group) => ({
       ...group,
       id: group?.id ?? `group_${Date.now()}`,
-      name: group?.name ?? "Group",
+      name: group?.name ?? "Block",
       properties: Array.isArray(group?.properties) ? group.properties : [],
     })),
     fieldTypes: Array.isArray(schema?.fieldTypes) ? schema.fieldTypes : [],

@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 interface NodeNameDialogProps {
   open: boolean;
   defaultName: string;
-  groupName?: string;
+  blockName?: string;
   onOpenChange: (open: boolean) => void;
   onConfirm: (name: string) => void;
   onCancel: () => void;
@@ -22,7 +22,7 @@ interface NodeNameDialogProps {
 export function NodeNameDialog({
   open,
   defaultName,
-  groupName,
+  blockName,
   onOpenChange,
   onConfirm,
   onCancel,
@@ -46,8 +46,8 @@ export function NodeNameDialog({
         <DialogHeader>
           <DialogTitle>Name this node</DialogTitle>
           <DialogDescription>
-            {groupName
-              ? `You dropped "${groupName}" onto the canvas. What should this instance be called?`
+            {blockName
+              ? `You dropped "${blockName}" onto the canvas. What should this instance be called?`
               : "What should this node be called?"}
           </DialogDescription>
         </DialogHeader>
