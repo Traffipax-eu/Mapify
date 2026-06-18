@@ -11,7 +11,7 @@ export type CustomObjectNodeData = {
 };
 
 export function createCustomObjectNode(
-  objectId: CustomObjectId,
+  objectId: CustomObjectId | string,
   position: { x: number; y: number },
   nextId: () => string,
   overrides?: Partial<Pick<CustomObjectNodeData, "label" | "accent" | "iconId">>,

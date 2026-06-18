@@ -1,20 +1,35 @@
 import type { LucideIcon } from "lucide-react";
-import { Database, Globe, UserCircle, Server, Cloud, Shield, Workflow, Sparkles } from "lucide-react";
+import {
+  BarChart3,
+  Brain,
+  Braces,
+  FileCode,
+  FileSpreadsheet,
+  FileText,
+  Globe,
+  LayoutDashboard,
+  Sparkles,
+  Unplug,
+  UserCircle,
+  Workflow,
+} from "lucide-react";
 import { getNodeIcon, type NodeIconId } from "@/lib/nodeIcons";
 
-export type CustomObjectId =
-  | "database"
-  | "api-endpoint"
-  | "user-role"
-  | "server"
-  | "cloud-service"
-  | "security-zone"
-  | "workflow"
-  | "custom";
+export type CustomObjectCategory = "documents" | "analytics" | "processes" | "actors";
 
-export type CustomObjectPayload =
-  | { kind: "custom-object"; objectId: CustomObjectId }
-  | { kind: "custom-object-template" };
+export type CustomObjectId =
+  | "excel-file"
+  | "csv-flat-file"
+  | "json-payload"
+  | "power-bi-report"
+  | "ml-model"
+  | "dashboard"
+  | "python-script"
+  | "api-endpoint"
+  | "etl-pipeline"
+  | "user-role";
+
+export type CustomObjectPayload = { kind: "custom-object"; objectId: CustomObjectId };
 
 export type CustomObjectDefinition = {
   id: CustomObjectId;
@@ -23,89 +38,133 @@ export type CustomObjectDefinition = {
   defaultName: string;
   icon: LucideIcon;
   accent: string;
+  category: CustomObjectCategory;
 };
 
+export const CUSTOM_OBJECT_CATEGORIES: { id: CustomObjectCategory; label: string }[] = [
+  { id: "documents", label: "Documents & Files" },
+  { id: "analytics", label: "Analytics & Outputs" },
+  { id: "processes", label: "Actions & Processes" },
+  { id: "actors", label: "Actors" },
+];
+
 export const CUSTOM_OBJECT_COLOR_PALETTE = [
-  "#3b82f6",
-  "#8b5cf6",
-  "#14b8a6",
-  "#f59e0b",
-  "#ec4899",
-  "#64748b",
-  "#0ea5e9",
   "#22c55e",
-  "#ef4444",
+  "#64748b",
   "#6366f1",
+  "#f59e0b",
+  "#a855f7",
+  "#0ea5e9",
+  "#14b8a6",
+  "#3b82f6",
+  "#ec4899",
+  "#ef4444",
 ];
 
 export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
   {
-    id: "database",
-    label: "Database",
-    description: "Data store or warehouse",
-    defaultName: "Database",
-    icon: Database,
-    accent: "#3b82f6",
+    id: "excel-file",
+    label: "Excel File",
+    description: "Spreadsheet workbook or XLSX export",
+    defaultName: "Excel File",
+    icon: FileSpreadsheet,
+    accent: "#22c55e",
+    category: "documents",
+  },
+  {
+    id: "csv-flat-file",
+    label: "CSV / Flat File",
+    description: "Delimited flat file extract",
+    defaultName: "CSV File",
+    icon: FileText,
+    accent: "#64748b",
+    category: "documents",
+  },
+  {
+    id: "json-payload",
+    label: "JSON / Payload",
+    description: "Structured message or API payload",
+    defaultName: "JSON Payload",
+    icon: Braces,
+    accent: "#6366f1",
+    category: "documents",
+  },
+  {
+    id: "power-bi-report",
+    label: "Power BI Report",
+    description: "Published BI report or semantic model output",
+    defaultName: "Power BI Report",
+    icon: BarChart3,
+    accent: "#f59e0b",
+    category: "analytics",
+  },
+  {
+    id: "ml-model",
+    label: "ML Model",
+    description: "Trained model artifact or scoring endpoint",
+    defaultName: "ML Model",
+    icon: Brain,
+    accent: "#a855f7",
+    category: "analytics",
+  },
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    description: "Operational dashboard or KPI view",
+    defaultName: "Dashboard",
+    icon: LayoutDashboard,
+    accent: "#0ea5e9",
+    category: "analytics",
+  },
+  {
+    id: "python-script",
+    label: "Python Script",
+    description: "Notebook, script, or batch job step",
+    defaultName: "Python Script",
+    icon: FileCode,
+    accent: "#14b8a6",
+    category: "processes",
   },
   {
     id: "api-endpoint",
     label: "API Endpoint",
-    description: "REST or GraphQL service",
-    defaultName: "API",
-    icon: Globe,
-    accent: "#8b5cf6",
+    description: "REST, GraphQL, or webhook interface",
+    defaultName: "API Endpoint",
+    icon: Unplug,
+    accent: "#3b82f6",
+    category: "processes",
+  },
+  {
+    id: "etl-pipeline",
+    label: "ETL Pipeline",
+    description: "Extract, transform, and load workflow",
+    defaultName: "ETL Pipeline",
+    icon: Workflow,
+    accent: "#ec4899",
+    category: "processes",
   },
   {
     id: "user-role",
     label: "User Role",
-    description: "Actor or persona",
+    description: "Persona, operator, or stakeholder",
     defaultName: "User Role",
     icon: UserCircle,
     accent: "#14b8a6",
-  },
-  {
-    id: "server",
-    label: "Server",
-    description: "Application or compute host",
-    defaultName: "Server",
-    icon: Server,
-    accent: "#64748b",
-  },
-  {
-    id: "cloud-service",
-    label: "Cloud Service",
-    description: "Managed cloud component",
-    defaultName: "Cloud",
-    icon: Cloud,
-    accent: "#0ea5e9",
-  },
-  {
-    id: "security-zone",
-    label: "Security Zone",
-    description: "Trust boundary or perimeter",
-    defaultName: "Security Zone",
-    icon: Shield,
-    accent: "#f59e0b",
-  },
-  {
-    id: "workflow",
-    label: "Workflow",
-    description: "Process or orchestration step",
-    defaultName: "Workflow",
-    icon: Workflow,
-    accent: "#ec4899",
-  },
-  {
-    id: "custom",
-    label: "Your Object",
-    description: "Pick your own icon and color",
-    defaultName: "Custom Object",
-    icon: Sparkles,
-    accent: "#6366f1",
+    category: "actors",
   },
 ];
 
-export function isCustomObjectPayload(value: unknown): value is Extract<CustomObjectPayload, { kind: "custom-object" }> {
+/** Legacy palette ids from older canvases — kept for load compatibility. */
+const LEGACY_CUSTOM_OBJECTS: Partial<CustomObjectDefinition & { id: string }>[] = [
+  { id: "database", label: "Database", defaultName: "Database", icon: FileText, accent: "#3b82f6" },
+  { id: "server", label: "Server", defaultName: "Server", icon: Globe, accent: "#64748b" },
+  { id: "cloud-service", label: "Cloud Service", defaultName: "Cloud", icon: Globe, accent: "#0ea5e9" },
+  { id: "security-zone", label: "Security Zone", defaultName: "Security Zone", icon: Globe, accent: "#f59e0b" },
+  { id: "workflow", label: "Workflow", defaultName: "Workflow", icon: Workflow, accent: "#ec4899" },
+  { id: "custom", label: "Custom Object", defaultName: "Custom Object", icon: Sparkles, accent: "#6366f1" },
+];
+
+export function isCustomObjectPayload(value: unknown): value is CustomObjectPayload {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -114,24 +173,32 @@ export function isCustomObjectPayload(value: unknown): value is Extract<CustomOb
   );
 }
 
-export function isCustomObjectTemplatePayload(
-  value: unknown,
-): value is Extract<CustomObjectPayload, { kind: "custom-object-template" }> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as CustomObjectPayload).kind === "custom-object-template"
-  );
+export function getCustomObjectDefinition(objectId: string): CustomObjectDefinition | undefined {
+  const current = CUSTOM_OBJECTS.find((item) => item.id === objectId);
+  if (current) return current;
+
+  const legacy = LEGACY_CUSTOM_OBJECTS.find((item) => item.id === objectId);
+  if (!legacy?.icon) return undefined;
+
+  return {
+    id: objectId as CustomObjectId,
+    label: legacy.label ?? "Artifact",
+    description: legacy.label ?? "Legacy artifact",
+    defaultName: legacy.defaultName ?? "Artifact",
+    icon: legacy.icon,
+    accent: legacy.accent ?? "#64748b",
+    category: "processes",
+  };
 }
 
-export function getCustomObjectDefinition(objectId: CustomObjectId): CustomObjectDefinition | undefined {
-  return CUSTOM_OBJECTS.find((item) => item.id === objectId);
-}
-
-export function resolveCustomObjectIcon(iconId?: NodeIconId, objectId?: CustomObjectId): LucideIcon {
+export function resolveCustomObjectIcon(iconId?: NodeIconId, objectId?: string): LucideIcon {
   if (iconId) {
     return getNodeIcon(iconId);
   }
   const definition = objectId ? getCustomObjectDefinition(objectId) : undefined;
-  return definition?.icon ?? Database;
+  return definition?.icon ?? Sparkles;
+}
+
+export function getCustomObjectsByCategory(category: CustomObjectCategory): CustomObjectDefinition[] {
+  return CUSTOM_OBJECTS.filter((item) => item.category === category);
 }

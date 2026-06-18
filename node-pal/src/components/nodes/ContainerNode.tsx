@@ -1,11 +1,20 @@
-import { memo, useState } from "react";
-import { NodeResizer, useReactFlow, type NodeProps } from "reactflow";
+import { memo, useCallback, useState } from "react";
+import { NodeResizer, NodeToolbar, Position, useReactFlow, type NodeProps } from "reactflow";
+import { Trash2, Ungroup } from "lucide-react";
+import { toast } from "sonner";
+import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
 import type { ContainerNodeData } from "@/lib/containerUtils";
+import { ungroupContainer } from "@/lib/containerUtils";
 
 function ContainerNodeImpl({ id, data, selected }: NodeProps<ContainerNodeData>) {
+  const { onDeleteNode } = useNodeCanvas();
   const { setNodes } = useReactFlow();
   const [editing, setEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(data.label);
+
+  const stopPointer = (event: React.PointerEvent | React.MouseEvent) => {
+    event.stopPropagation();
+  };
 
   const commitTitle = (nextTitle: string) => {
     const label = nextTitle.trim() || "CONTAINER";
@@ -16,8 +25,61 @@ function ContainerNodeImpl({ id, data, selected }: NodeProps<ContainerNodeData>)
     );
   };
 
+  const handleUngroup = useCallback(() => {
+    setNodes((nodes) => {
+      const childCount = nodes.filter((node) => node.parentNode === id).length;
+      const next = ungroupContainer(nodes, id);
+      if (childCount > 0) {
+        toast.success(`Ungrouped ${childCount} item${childCount === 1 ? "" : "s"}`);
+      } else {
+        toast.success("Container removed");
+      }
+      return next;
+    });
+  }, [id, setNodes]);
+
+  const handleDeleteContainer = useCallback(() => {
+    onDeleteNode(id);
+  }, [id, onDeleteNode]);
+
   return (
     <>
+      <NodeToolbar
+        isVisible={selected}
+        position={Position.Top}
+        offset={12}
+        className="container-node__toolbar-wrap nodrag nopan"
+      >
+        <div className="container-node__toolbar">
+          <button
+            type="button"
+            className="container-node__toolbar-btn"
+            onPointerDown={stopPointer}
+            onClick={(event) => {
+              event.stopPropagation();
+              handleUngroup();
+            }}
+            title="Ungroup — release child nodes onto the canvas"
+          >
+            <Ungroup className="h-3.5 w-3.5" />
+            <span>Ungroup</span>
+          </button>
+          <button
+            type="button"
+            className="container-node__toolbar-btn container-node__toolbar-btn--danger"
+            onPointerDown={stopPointer}
+            onClick={(event) => {
+              event.stopPropagation();
+              handleDeleteContainer();
+            }}
+            title="Delete container only"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            <span>Delete</span>
+          </button>
+        </div>
+      </NodeToolbar>
+
       <NodeResizer
         isVisible={selected}
         minWidth={280}

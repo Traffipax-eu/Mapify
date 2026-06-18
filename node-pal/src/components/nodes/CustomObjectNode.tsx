@@ -6,7 +6,7 @@ import { PlusHandle } from "./PlusHandle";
 import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
 
 export type CustomObjectNodeData = {
-  objectId: CustomObjectId;
+  objectId: string;
   label: string;
   accent?: string;
   iconId?: NodeIconId;

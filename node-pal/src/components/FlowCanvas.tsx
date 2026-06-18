@@ -4,7 +4,6 @@ import ReactFlow, {
   Controls,
   MiniMap,
   addEdge,
-  applyNodeChanges,
   ConnectionMode,
   MarkerType,
   SelectionMode,
@@ -69,12 +68,12 @@ import { normalizeSchema } from "@/lib/schemaProperties";
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
 import { createDrawingNode } from "@/lib/createDrawingNode";
 import { createContainerNode } from "@/lib/createContainerNode";
-import { createCustomObjectNode, createConfiguredCustomObjectNode } from "@/lib/createCustomObjectNode";
-import { isCustomObjectPayload, isCustomObjectTemplatePayload } from "@/lib/customObjects";
-import { CustomObjectDialog, type CustomObjectConfig } from "./CustomObjectDialog";
+import { createCustomObjectNode } from "@/lib/createCustomObjectNode";
+import { isCustomObjectPayload } from "@/lib/customObjects";
 import {
   assignNodeParent,
-  detachChildrenBeforeContainerDelete,
+  applySafeNodeRemovals,
+  resolveSafeNodeRemovals,
   isContainerNode,
   pickInnermostContainer,
   sortNodesParentFirst,
@@ -189,8 +188,7 @@ function InnerCanvas() {
   const [isEncrypting, setIsEncrypting] = useState(false);
   const [cloudSnapshotsOpen, setCloudSnapshotsOpen] = useState(false);
   const [nodeNameDialogOpen, setNodeNameDialogOpen] = useState(false);
-  const [customObjectDialogOpen, setCustomObjectDialogOpen] = useState(false);
-  const [pendingCustomObjectPosition, setPendingCustomObjectPosition] = useState<{ x: number; y: number } | null>(null);
+  const lastSafeRemovalIdsRef = useRef<string[]>([]);
   const [pendingNodeDrop, setPendingNodeDrop] = useState<{
     position: { x: number; y: number };
     item: NodeGroupDragPayload;
@@ -382,9 +380,9 @@ function InnerCanvas() {
 
       if (removals.length > 0) {
         setNodes((current) => {
-          const detached = detachChildrenBeforeContainerDelete(current, new Set(removals));
-          const next = applyNodeChanges(changes, detached);
-          return sortNodesParentFirst(next);
+          const safeRemovals = resolveSafeNodeRemovals(current, removals);
+          lastSafeRemovalIdsRef.current = [...safeRemovals];
+          return applySafeNodeRemovals(current, removals);
         });
         return;
       }
@@ -611,47 +609,11 @@ function InnerCanvas() {
         return;
       }
 
-      if (isCustomObjectTemplatePayload(item)) {
-        setPendingCustomObjectPosition(position);
-        setCustomObjectDialogOpen(true);
-        return;
-      }
-
       if (isCustomObjectPayload(item)) {
-        if (item.objectId === "custom") {
-          setPendingCustomObjectPosition(position);
-          setCustomObjectDialogOpen(true);
-          return;
-        }
         setNodes((nds) => nds.concat(createCustomObjectNode(item.objectId, position, nextNodeId)));
       }
     },
     [rfInstance, setNodes],
-  );
-
-  const handleCustomObjectConfirm = useCallback(
-    (config: CustomObjectConfig) => {
-      const position =
-        pendingCustomObjectPosition ??
-        (rfInstance
-          ? rfInstance.screenToFlowPosition({
-              x: window.innerWidth / 2,
-              y: window.innerHeight / 2,
-            })
-          : { x: 0, y: 0 });
-
-      setNodes((nds) =>
-        nds.concat(
-          createConfiguredCustomObjectNode(position, nextNodeId, {
-            label: config.label,
-            accent: config.accent,
-            iconId: config.iconId,
-          }),
-        ),
-      );
-      setPendingCustomObjectPosition(null);
-    },
-    [pendingCustomObjectPosition, rfInstance, setNodes],
   );
 
   const createNodeFromDrop = useCallback(
@@ -1084,7 +1046,7 @@ function InnerCanvas() {
 
   const handleDeleteNode = useCallback(
     (nodeId: string) => {
-      setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+      setNodes((nds) => applySafeNodeRemovals(nds, [nodeId]));
       cleanupAfterNodeDelete([nodeId]);
       toast.success("Node deleted");
     },
@@ -1093,9 +1055,15 @@ function InnerCanvas() {
 
   const onNodesDelete: OnNodesDelete = useCallback(
     (deleted) => {
-      cleanupAfterNodeDelete(deleted.map((n) => n.id));
-      if (deleted.length > 1) {
-        toast.success(`Deleted ${deleted.length} items`);
+      const requestedIds = deleted.map((node) => node.id);
+      const ids =
+        lastSafeRemovalIdsRef.current.length > 0
+          ? lastSafeRemovalIdsRef.current
+          : requestedIds;
+      lastSafeRemovalIdsRef.current = [];
+      cleanupAfterNodeDelete(ids);
+      if (ids.length > 1) {
+        toast.success(`Deleted ${ids.length} items`);
       }
     },
     [cleanupAfterNodeDelete],
@@ -1943,15 +1911,6 @@ function InnerCanvas() {
         }}
         onConfirm={createNodeFromDrop}
         onCancel={cancelNodeDrop}
-      />
-
-      <CustomObjectDialog
-        open={customObjectDialogOpen}
-        onOpenChange={(open) => {
-          setCustomObjectDialogOpen(open);
-          if (!open) setPendingCustomObjectPosition(null);
-        }}
-        onConfirm={handleCustomObjectConfirm}
       />
 
       <CloudSnapshotsDialog

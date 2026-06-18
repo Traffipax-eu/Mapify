@@ -10,13 +10,18 @@ import {
   ChevronDown,
   ChevronRight,
   Box,
+  Layers,
 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { Schema, NodeGroupSchema } from "@/lib/storage";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import type { Dispatch, SetStateAction } from "react";
 import { DRAWING_TOOLS, type DrawingToolId } from "@/lib/drawingTools";
-import { CUSTOM_OBJECTS, type CustomObjectId } from "@/lib/customObjects";
+import {
+  CUSTOM_OBJECT_CATEGORIES,
+  getCustomObjectsByCategory,
+  type CustomObjectId,
+} from "@/lib/customObjects";
 
 interface Props {
   schema: Schema;
@@ -33,7 +38,7 @@ const TOOL_ICONS: Record<DrawingToolId, typeof Type> = {
 
 export function Sidebar({ schema, onUpdateSchema, onOpenSchemaBuilder, onDeleteGroup }: Props) {
   const [toolsOpen, setToolsOpen] = useState(true);
-  const [objectsOpen, setObjectsOpen] = useState(true);
+  const [artifactsOpen, setArtifactsOpen] = useState(true);
 
   const addGroup = () => {
     const newGroup: NodeGroupSchema = {
@@ -97,24 +102,45 @@ export function Sidebar({ schema, onUpdateSchema, onOpenSchemaBuilder, onDeleteG
           </CollapsibleContent>
         </Collapsible>
 
-        <Collapsible open={objectsOpen} onOpenChange={setObjectsOpen} className="mt-2 border-t border-sidebar-border pt-4">
+        <Collapsible open={artifactsOpen} onOpenChange={setArtifactsOpen} className="mt-2 border-t border-sidebar-border pt-4">
           <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 rounded-lg px-1 py-2 text-sm font-semibold hover:bg-accent/50 transition">
             <span className="flex items-center gap-2">
-              <Database className="h-4 w-4" />
-              Custom Objects
+              <Layers className="h-4 w-4" />
+              Artifacts & Processes
             </span>
-            {objectsOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+            {artifactsOpen ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            )}
           </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2 grid grid-cols-2 gap-2">
-            {CUSTOM_OBJECTS.map((object) => (
-              <CustomObjectCard key={object.id} objectId={object.id} label={object.label} description={object.description} icon={object.icon} accent={object.accent} />
-            ))}
+          <CollapsibleContent className="mt-2 space-y-4">
+            {CUSTOM_OBJECT_CATEGORIES.map((category) => {
+              const items = getCustomObjectsByCategory(category.id);
+              return (
+                <div key={category.id} className="artifact-palette__category">
+                  <p className="artifact-palette__category-label">{category.label}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {items.map((object) => (
+                      <ArtifactCard
+                        key={object.id}
+                        objectId={object.id}
+                        label={object.label}
+                        description={object.description}
+                        icon={object.icon}
+                        accent={object.accent}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </CollapsibleContent>
         </Collapsible>
       </div>
 
       <div className="mt-auto border-t border-sidebar-border p-4 text-xs text-muted-foreground">
-        Drag node groups, drawing tools, or custom objects onto the canvas.
+        Drag node groups, artifacts, or drawing tools onto the canvas.
       </div>
     </aside>
   );
@@ -147,8 +173,8 @@ function GroupCard({
       onDragStart={(e) => onDragStart(e, item)}
       className="group rounded-xl border bg-background/70 p-3 transition hover:-translate-y-0.5 hover:shadow-sm cursor-grab active:cursor-grabbing"
       style={{
-        borderColor: item.color || "#3b82f6",
-        backgroundColor: `${item.color || "#3b82f6"}10`,
+        borderColor: item.color || "#5b8fd9",
+        backgroundColor: `${item.color || "#5b8fd9"}10`,
       }}
     >
       <div className="flex items-start justify-between gap-2">
@@ -186,7 +212,7 @@ function GroupCard({
           </button>
           <span
             className="h-2.5 w-2.5 rounded-full ml-1"
-            style={{ backgroundColor: item.color || "#3b82f6" }}
+            style={{ backgroundColor: item.color || "#5b8fd9" }}
           />
         </div>
       </div>
@@ -228,7 +254,7 @@ function DrawingToolCard({
   );
 }
 
-function CustomObjectCard({
+function ArtifactCard({
   objectId,
   label,
   description,
@@ -244,11 +270,7 @@ function CustomObjectCard({
   const onDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData(
       "application/reactflow",
-      JSON.stringify(
-        objectId === "custom"
-          ? { kind: "custom-object-template" }
-          : { kind: "custom-object", objectId },
-      ),
+      JSON.stringify({ kind: "custom-object", objectId }),
     );
     e.dataTransfer.effectAllowed = "move";
   };
@@ -258,15 +280,15 @@ function CustomObjectCard({
       draggable
       onDragStart={onDragStart}
       title={description}
-      className="flex flex-col items-center gap-1.5 rounded-lg border border-border bg-background/80 p-3 text-center transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm cursor-grab active:cursor-grabbing"
+      className="artifact-palette__card flex flex-col items-center gap-1.5 rounded-lg border border-border bg-background/80 p-2.5 text-center transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm cursor-grab active:cursor-grabbing"
     >
       <div
-        className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted/30"
-        style={{ borderColor: `${accent}55`, color: accent }}
+        className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted/20"
+        style={{ borderColor: `${accent}44`, color: accent }}
       >
         <Icon className="h-4 w-4" />
       </div>
-      <span className="text-[11px] font-medium leading-tight">{label}</span>
+      <span className="text-[10px] font-medium leading-tight text-foreground/90">{label}</span>
     </div>
   );
 }

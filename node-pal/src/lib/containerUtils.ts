@@ -105,3 +105,39 @@ export function detachChildrenBeforeContainerDelete(nodes: Node[], deletedIds: S
       };
     });
 }
+
+/** Skip cascading child deletes when a container parent is being removed. */
+export function resolveSafeNodeRemovals(nodes: Node[], removalIds: string[]): Set<string> {
+  const lookup = buildNodeLookup(nodes);
+  const requested = new Set(removalIds);
+  const safe = new Set(removalIds);
+
+  for (const id of removalIds) {
+    const node = lookup.get(id);
+    if (!node?.parentNode) continue;
+
+    let ancestorId: string | undefined = node.parentNode;
+    while (ancestorId) {
+      const ancestor = lookup.get(ancestorId);
+      if (!ancestor) break;
+      if (requested.has(ancestorId) && isContainerNode(ancestor)) {
+        safe.delete(id);
+        break;
+      }
+      ancestorId = ancestor.parentNode;
+    }
+  }
+
+  return safe;
+}
+
+export function applySafeNodeRemovals(nodes: Node[], removalIds: string[]): Node[] {
+  const safeRemovals = resolveSafeNodeRemovals(nodes, removalIds);
+  return sortNodesParentFirst(detachChildrenBeforeContainerDelete(nodes, safeRemovals));
+}
+
+export function ungroupContainer(nodes: Node[], containerId: string): Node[] {
+  const container = nodes.find((node) => node.id === containerId);
+  if (!container || !isContainerNode(container)) return nodes;
+  return applySafeNodeRemovals(nodes, [containerId]);
+}
