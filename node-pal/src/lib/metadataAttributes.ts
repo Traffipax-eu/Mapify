@@ -103,7 +103,7 @@ export function fixedPropertyRowsToMetadata(
   for (const property of propertyList) {
     propertyKeys.push(property.id);
     const row = rowByKey.get(property.id);
-    if (!row) continue;
+    if (!row || row.value.trim() === "") continue;
     metadata[property.id] = row.value;
   }
 
@@ -119,7 +119,7 @@ export function pickMetadataForKeys(
   const next: MetadataValues = {};
   for (const [key, value] of Object.entries(metadata)) {
     if (!allowed.has(key)) continue;
-    if (value === undefined || value === null) continue;
+    if (value === undefined || value === null || value === "") continue;
     next[key] = value;
   }
   return next;

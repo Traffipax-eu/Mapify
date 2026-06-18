@@ -62,8 +62,14 @@ export function MetadataKeyValueGrid({
 
   useEffect(() => {
     if (!useFixedRows) return;
+    if (rowsRef.current.some((row) => !row.storageKey)) return;
     setRows(metadataToFixedPropertyRows(metadata, safeProperties));
   }, [metadata, propertySignature, useFixedRows, safeProperties]);
+
+  const isDraftBlockPropertyRow = useCallback(
+    (row: AttributeRow) => useFixedRows && allowAddBlockAttributes && !row.storageKey,
+    [allowAddBlockAttributes, useFixedRows],
+  );
 
   const persistRows = useCallback(
     (nextRows: AttributeRow[], nextProperties: ScopedProperty[] = safeProperties) => {
@@ -84,15 +90,59 @@ export function MetadataKeyValueGrid({
 
   const commitRow = useCallback(
     (rowId: string, patch: Partial<AttributeRow>) => {
+      const currentRow = rowsRef.current.find((row) => row.rowId === rowId);
+      if (currentRow && isDraftBlockPropertyRow(currentRow)) {
+        const name = (patch.label ?? currentRow.label).trim();
+        if (!name) {
+          const next = rowsRef.current.filter((row) => row.rowId !== rowId);
+          rowsRef.current = next;
+          setRows(next);
+          setEditing(null);
+          return;
+        }
+
+        if (safeProperties.some((property) => property.id === name || property.name === name)) {
+          setEditing({ rowId, field: "key" });
+          return;
+        }
+
+        const nextProperties = [
+          ...safeProperties,
+          { id: name, name, type: "text" as const, scope: "group" as const },
+        ];
+        const nextRows = rowsRef.current.map((row) =>
+          row.rowId === rowId
+            ? {
+                rowId: name,
+                storageKey: name,
+                label: name,
+                value: patch.value ?? row.value ?? "",
+              }
+            : row,
+        );
+        persistRows(nextRows, nextProperties);
+        setEditing(null);
+        return;
+      }
+
       const next = rowsRef.current.map((row) => (row.rowId === rowId ? { ...row, ...patch } : row));
       persistRows(next);
       setEditing(null);
     },
-    [persistRows],
+    [isDraftBlockPropertyRow, persistRows, safeProperties],
   );
 
   const removeRow = useCallback(
     (rowId: string) => {
+      const currentRow = rowsRef.current.find((row) => row.rowId === rowId);
+      if (currentRow && isDraftBlockPropertyRow(currentRow)) {
+        const next = rowsRef.current.filter((row) => row.rowId !== rowId);
+        rowsRef.current = next;
+        setRows(next);
+        setEditing(null);
+        return;
+      }
+
       if (useFixedRows) {
         const nextProperties = safeProperties.filter((property) => property.id !== rowId);
         const nextRows = rowsRef.current.filter((row) => row.rowId !== rowId);
@@ -103,29 +153,17 @@ export function MetadataKeyValueGrid({
       }
       setEditing(null);
     },
-    [persistRows, safeProperties, useFixedRows],
+    [isDraftBlockPropertyRow, persistRows, safeProperties, useFixedRows],
   );
 
   const addRow = useCallback(() => {
     if (useFixedRows && allowAddBlockAttributes) {
-      const newId = `attr_${Date.now()}`;
-      const nextProperties = [
-        ...safeProperties,
-        { id: newId, name: "New attribute", type: "text" as const, scope: "group" as const },
-      ];
-      const nextRows = [
-        ...rowsRef.current,
-        { rowId: newId, storageKey: newId, label: "New attribute", value: "" },
-      ];
-      rowsRef.current = nextRows;
-      setRows(nextRows);
-      setEditing({ rowId: newId, field: "value" });
-      pendingFocusRef.current = "value";
-      const { metadata: nextMetadata, propertyKeys } = fixedPropertyRowsToMetadata(
-        nextRows,
-        nextProperties,
-      );
-      onChange(nextMetadata, propertyKeys);
+      const row = createEmptyAttributeRow();
+      pendingFocusRef.current = "key";
+      const next = [...rowsRef.current, row];
+      rowsRef.current = next;
+      setRows(next);
+      setEditing({ rowId: row.rowId, field: "key" });
       return;
     }
 
@@ -155,7 +193,8 @@ export function MetadataKeyValueGrid({
           row={row}
           editing={editing}
           pendingFocusRef={pendingFocusRef}
-          keysLocked={useFixedRows}
+          keysLocked={useFixedRows && Boolean(row.storageKey)}
+          isDraftBlockProperty={isDraftBlockPropertyRow(row)}
           allowRemove={!useFixedRows || allowAddBlockAttributes}
           onStartEdit={(field) => setEditing({ rowId: row.rowId, field })}
           onCommit={(patch) => commitRow(row.rowId, patch)}
@@ -185,6 +224,7 @@ function AttributeRowEditor({
   editing,
   pendingFocusRef,
   keysLocked,
+  isDraftBlockProperty,
   allowRemove,
   onStartEdit,
   onCommit,
@@ -195,6 +235,7 @@ function AttributeRowEditor({
   editing: EditingTarget;
   pendingFocusRef: React.MutableRefObject<"key" | "value" | null>;
   keysLocked: boolean;
+  isDraftBlockProperty: boolean;
   allowRemove: boolean;
   onStartEdit: (field: "key" | "value") => void;
   onCommit: (patch: Partial<AttributeRow>) => void;
@@ -234,6 +275,7 @@ function AttributeRowEditor({
       label: nextKey,
       storageKey: nextKey || row.storageKey,
     });
+    if (isDraftBlockProperty) return;
   };
 
   const commitValue = () => {
@@ -257,14 +299,18 @@ function AttributeRowEditor({
               if (e.key === "Enter") {
                 e.preventDefault();
                 commitKey();
-                onStartEdit("value");
-                pendingFocusRef.current = "value";
+                if (!isDraftBlockProperty) {
+                  onStartEdit("value");
+                  pendingFocusRef.current = "value";
+                }
               }
               if (e.key === "Tab" && !e.shiftKey) {
                 e.preventDefault();
                 commitKey();
-                onStartEdit("value");
-                pendingFocusRef.current = "value";
+                if (!isDraftBlockProperty) {
+                  onStartEdit("value");
+                  pendingFocusRef.current = "value";
+                }
               }
               if (e.key === "Escape") onCancel();
             }}
