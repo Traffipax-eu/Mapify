@@ -62,7 +62,7 @@ export function Sidebar({
 
   return (
     <aside className="mapify-sidebar flex w-72 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
-      <div className="flex items-center justify-between p-4">
+      <div className="flex shrink-0 items-center justify-between border-b border-sidebar-border/60 bg-sidebar p-4">
         <div className="flex items-center gap-2 text-sm font-bold tracking-tight">
           <Database className="h-4 w-4 text-primary" />
           <span>Blocks</span>
@@ -76,7 +76,7 @@ export function Sidebar({
         </button>
       </div>
 
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 pb-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto scroll-pt-2 px-4 pt-2 pb-4">
         {schema.nodeGroups.length === 0 && (
           <p className="text-xs text-muted-foreground italic px-1">
             No blocks yet. Create one to define your schema and drag it onto the canvas.
@@ -111,7 +111,7 @@ export function Sidebar({
           <CollapsibleTrigger className="ui-bounce flex w-full items-center justify-between gap-2 rounded-xl px-1 py-2 text-sm font-bold tracking-tight hover:bg-accent/50 transition">
             <span className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-primary" />
-              Data Assets
+              Custom Objects
             </span>
             {artifactsOpen ? (
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -136,7 +136,7 @@ export function Sidebar({
       </div>
 
       <div className="mt-auto border-t border-sidebar-border p-4 text-xs text-muted-foreground">
-        Drag blocks, assets, or tools onto the canvas.
+        Drag blocks, custom objects, or tools onto the canvas.
       </div>
     </aside>
   );

@@ -68,7 +68,6 @@ import { normalizeSchema } from "@/lib/schemaProperties";
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
 import { createDrawingNode } from "@/lib/createDrawingNode";
 import { createContainerNode } from "@/lib/createContainerNode";
-import { BRAND_ASSETS } from "@/lib/brand";
 import { ensureCustomObjectSchema } from "@/lib/customObjectSchema";
 import { createCustomObjectNode, createConfiguredCustomObjectNode, type CustomObjectNodeData } from "@/lib/createCustomObjectNode";
 import { isCustomObjectPayload, isCustomObjectTemplatePayload } from "@/lib/customObjects";
@@ -1798,8 +1797,11 @@ function InnerCanvas() {
       <header className="mapify-header flex h-14 shrink-0 items-center justify-between border-b border-border px-4 gap-4">
         <div className="flex items-center gap-4 min-w-0">
           <div className="mapify-brand flex shrink-0 items-center">
-            <span className="mapify-brand-lockup ui-bounce" aria-label="Mapify">
-              <img src={BRAND_ASSETS.logoNav} alt="" className="mapify-brand-lockup__icon" />
+            <span
+              className="mapify-brand-wordmark font-black text-2xl tracking-tight bg-gradient-to-r from-blue-600 to-cyan-400 bg-clip-text text-transparent select-none"
+              aria-label="Mapify"
+            >
+              mapify
             </span>
           </div>
           <div className="flex items-center rounded-lg border border-border p-0.5 bg-muted/40">

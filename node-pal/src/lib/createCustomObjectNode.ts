@@ -34,8 +34,6 @@ export function createCustomObjectNode(
       label: overrides?.label ?? definition?.defaultName ?? "Object",
       accent: overrides?.accent ?? definition?.accent ?? "#3b82f6",
       iconId: overrides?.iconId,
-      fields: [],
-      collapsed: false,
       metadata: {},
     },
   };

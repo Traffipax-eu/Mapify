@@ -52,10 +52,12 @@ export function CustomObjectDialog({ open, onOpenChange, onConfirm, initial }: P
               className="custom-object-node custom-object-node--preview"
               style={{ "--object-accent": accent } as React.CSSProperties}
             >
-              <div className="custom-object-node__icon-wrap" aria-hidden>
-                {SelectedIcon ? <SelectedIcon className="custom-object-node__icon" /> : null}
+              <div className="custom-object-node__card">
+                <div className="custom-object-node__icon-wrap" aria-hidden>
+                  {SelectedIcon ? <SelectedIcon className="custom-object-node__icon" /> : null}
+                </div>
+                <span className="custom-object-node__label">{label.trim() || "Custom Object"}</span>
               </div>
-              <span className="custom-object-node__label">{label.trim() || "Custom Object"}</span>
             </div>
           </div>
 
