@@ -79,7 +79,7 @@ function CustomObjectNodeImpl({ id, data: rawData, selected }: NodeProps<CustomO
       />
 
       <div
-        className={`custom-object-node__surface nodrag nopan overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-sm ${
+        className={`custom-object-node__surface overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-sm ${
           isConnectTarget ? "custom-object-node__surface--connect-target" : ""
         }`}
         onDragOver={handleDragOver}

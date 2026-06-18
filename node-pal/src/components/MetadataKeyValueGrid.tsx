@@ -56,16 +56,9 @@ export function MetadataKeyValueGrid({
     );
     setEditing(null);
     pendingFocusRef.current = null;
-    // Only reset local row state when the sidebar selection changes, not on every metadata object reference change.
+    // Reload row state when the sidebar selection or block attribute list changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetKey]);
-
-  useEffect(() => {
-    if (!useFixedRows) return;
-    if (editing) return;
-    if (rowsRef.current.some((row) => !row.storageKey)) return;
-    setRows(metadataToFixedPropertyRows(metadata, safeProperties));
-  }, [propertySignature, useFixedRows, safeProperties, editing]);
+  }, [resetKey, propertySignature]);
 
   const isDraftBlockPropertyRow = useCallback(
     (row: AttributeRow) => useFixedRows && allowAddBlockAttributes && !row.storageKey,
@@ -76,7 +69,10 @@ export function MetadataKeyValueGrid({
     (nextRows: AttributeRow[], nextProperties: ScopedProperty[] = safeProperties) => {
       rowsRef.current = nextRows;
       setRows(nextRows);
-      if (lockPropertyKeys && nextProperties.length > 0) {
+      const shouldUseFixedMetadata =
+        (lockPropertyKeys && nextProperties.length > 0) ||
+        (useFixedRows && nextProperties.length > 0);
+      if (shouldUseFixedMetadata) {
         const { metadata: nextMetadata, propertyKeys } = fixedPropertyRowsToMetadata(
           nextRows,
           nextProperties,
@@ -86,7 +82,7 @@ export function MetadataKeyValueGrid({
       }
       onChange(attributeRowsToMetadata(nextRows, nextProperties));
     },
-    [lockPropertyKeys, onChange, safeProperties],
+    [lockPropertyKeys, onChange, safeProperties, useFixedRows],
   );
 
   const commitRow = useCallback(

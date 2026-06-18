@@ -4,6 +4,7 @@ import {
   getFieldProperties,
   type ScopedProperty,
 } from "@/lib/schemaProperties";
+import { sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
 
 export type FieldTableColumn = {
   id: string;
@@ -162,4 +163,14 @@ export function normalizeMetadataForProperties(
   }
 
   return next;
+}
+
+export function buildFieldMetadataUpdate(
+  metadata: MetadataValues | null | undefined,
+  attributeDefinitions: PropertyDefinition[],
+): MetadataValues {
+  if (!attributeDefinitions.length) {
+    return sanitizeFreeformMetadata(metadata);
+  }
+  return normalizeMetadataForProperties(metadata, attributeDefinitions);
 }

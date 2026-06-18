@@ -105,7 +105,7 @@ export function fixedPropertyRowsToMetadata(
         item.rowId === property.id ||
         item.label.trim().toLowerCase() === property.name.trim().toLowerCase(),
     );
-    if (!row || row.value.trim() === "") continue;
+    if (!row || row.value === "") continue;
     metadata[property.id] = row.value;
   }
 

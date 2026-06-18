@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatFieldCellValue, getBlockFieldAttributeDefinitions, normalizeMetadataForProperties, resolveFieldMetadataValue } from "./fieldMetadata";
+import { formatFieldCellValue, getBlockFieldAttributeDefinitions, normalizeMetadataForProperties, resolveFieldMetadataValue, buildFieldMetadataUpdate } from "./fieldMetadata";
 import type { PropertyDefinition } from "./storage";
 
 const properties: PropertyDefinition[] = [
@@ -68,6 +68,12 @@ describe("normalizeMetadataForProperties", () => {
     expect(normalizeMetadataForProperties({ Type: "VARCHAR" }, properties)).toEqual({
       prop_type: "VARCHAR",
     });
+  });
+});
+
+describe("buildFieldMetadataUpdate", () => {
+  it("keeps freeform metadata when no attribute definitions exist", () => {
+    expect(buildFieldMetadataUpdate({ Notes: "hello" }, [])).toEqual({ Notes: "hello" });
   });
 });
 

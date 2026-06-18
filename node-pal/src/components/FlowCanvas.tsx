@@ -66,8 +66,8 @@ import { LineageProvider, type LineageContextValue } from "@/contexts/LineageCon
 import { NodeCanvasProvider, type NodeCanvasContextValue } from "@/contexts/NodeCanvasContext";
 import { buildMarker } from "@/lib/edgeMarkers";
 import { computeLineage, decorateEdgesForDisplay } from "@/lib/lineageTraversal";
-import { pickMetadataForKeys, sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
-import { getBlockFieldAttributeDefinitions, normalizeMetadataForProperties } from "@/lib/fieldMetadata";
+import { sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
+import { buildFieldMetadataUpdate, getBlockFieldAttributeDefinitions } from "@/lib/fieldMetadata";
 import {
   getCustomObjectFieldProperties,
   getFieldProperties,
@@ -1206,50 +1206,46 @@ function InnerCanvas() {
             objectId?: string;
           };
           const isCustomObject = n.type === "customObject";
-          const schemaProps = isCustomObject
+          const fields = Array.isArray(clean.fields) ? clean.fields : [];
+          const source = isCustomObject
+            ? { objectId: clean.objectId, fieldAttributeKeys: clean.fieldAttributeKeys }
+            : { nodeGroupId: clean.nodeGroupId, fieldAttributeKeys: clean.fieldAttributeKeys };
+          const schemaFieldProps = isCustomObject
             ? getCustomObjectFieldProperties(schema, clean.objectId)
             : getFieldProperties(schema, clean.nodeGroupId);
-          const fields = Array.isArray(clean.fields) ? clean.fields : [];
 
-          if (schemaProps.length > 0) {
-            selectedMetadata = normalizeMetadataForProperties(sanitizedInput, schemaProps);
-            return {
-              ...n,
-              data: {
-                ...clean,
-                fields: fields.map((field) =>
-                  field.id === fieldId ? { ...field, metadata: selectedMetadata } : field,
-                ),
-              },
-            };
-          }
+          const attributeDefinitions = getBlockFieldAttributeDefinitions(
+            schema,
+            source,
+            fields,
+            isCustomObject ? "artifact" : "block",
+          );
 
           const nextFieldAttributeKeys =
-            propertyKeys ??
-            getBlockFieldAttributeDefinitions(
-              schema,
-              isCustomObject
-                ? { objectId: clean.objectId, fieldAttributeKeys: clean.fieldAttributeKeys }
-                : { nodeGroupId: clean.nodeGroupId, fieldAttributeKeys: clean.fieldAttributeKeys },
-              fields,
-              isCustomObject ? "artifact" : "block",
-            ).map((property) => property.id);
+            propertyKeys?.length
+              ? propertyKeys
+              : attributeDefinitions.map((property) => property.id);
 
-          selectedMetadata = pickMetadataForKeys(sanitizedInput, nextFieldAttributeKeys);
+          selectedMetadata = buildFieldMetadataUpdate(sanitizedInput, attributeDefinitions);
+
+          const nextData: SystemNodeData & { objectId?: string } = {
+            ...clean,
+            fields: fields.map((field) => ({
+              ...field,
+              metadata:
+                field.id === fieldId
+                  ? selectedMetadata
+                  : buildFieldMetadataUpdate(field.metadata, attributeDefinitions),
+            })),
+          };
+
+          if (schemaFieldProps.length === 0 && nextFieldAttributeKeys.length > 0) {
+            nextData.fieldAttributeKeys = nextFieldAttributeKeys;
+          }
 
           return {
             ...n,
-            data: {
-              ...clean,
-              fieldAttributeKeys: nextFieldAttributeKeys,
-              fields: fields.map((field) => ({
-                ...field,
-                metadata:
-                  field.id === fieldId
-                    ? selectedMetadata
-                    : pickMetadataForKeys(field.metadata, nextFieldAttributeKeys),
-              })),
-            },
+            data: nextData,
           };
         }),
       );
