@@ -1,5 +1,6 @@
 import type { MetadataValues } from "@/lib/storage";
 import type { ScopedProperty } from "@/lib/schemaProperties";
+import { resolveFieldMetadataValue } from "@/lib/fieldMetadata";
 
 export type AttributeRow = {
   rowId: string;
@@ -39,6 +40,21 @@ export function metadataToAttributeRows(
   });
 }
 
+/** One row per block field attribute; values come from the selected field only. */
+export function metadataToFixedPropertyRows(
+  metadata: MetadataValues | null | undefined,
+  properties: ScopedProperty[] = [],
+): AttributeRow[] {
+  return (properties ?? [])
+    .filter((property) => property?.id)
+    .map((property) => ({
+      rowId: property.id,
+      storageKey: property.id,
+      label: property.name?.trim() || "Attribute",
+      value: formatMetadataValue(resolveFieldMetadataValue(metadata, property.id, properties)),
+    }));
+}
+
 export function attributeRowsToMetadata(
   rows: AttributeRow[] | null | undefined,
   properties: ScopedProperty[] = [],
@@ -73,6 +89,42 @@ export function attributeRowsToMetadata(
   return next;
 }
 
+export function fixedPropertyRowsToMetadata(
+  rows: AttributeRow[] | null | undefined,
+  properties: ScopedProperty[] = [],
+): { metadata: MetadataValues; propertyKeys: string[] } {
+  const propertyList = (properties ?? []).filter((property) => property?.id);
+  const rowByKey = new Map(
+    (rows ?? []).map((row) => [row.storageKey || row.rowId, row] as const),
+  );
+  const metadata: MetadataValues = {};
+  const propertyKeys: string[] = [];
+
+  for (const property of propertyList) {
+    propertyKeys.push(property.id);
+    const row = rowByKey.get(property.id);
+    if (!row) continue;
+    metadata[property.id] = row.value;
+  }
+
+  return { metadata, propertyKeys };
+}
+
+export function pickMetadataForKeys(
+  metadata: MetadataValues | null | undefined,
+  propertyKeys: string[],
+): MetadataValues {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return {};
+  const allowed = new Set(propertyKeys);
+  const next: MetadataValues = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!allowed.has(key)) continue;
+    if (value === undefined || value === null) continue;
+    next[key] = value;
+  }
+  return next;
+}
+
 export function sanitizeFreeformMetadata(metadata: MetadataValues | null | undefined): MetadataValues {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return {};
   const next: MetadataValues = {};
@@ -89,11 +141,16 @@ export function getAttributeDisplayItems(
   metadata: MetadataValues | null | undefined,
   properties: ScopedProperty[] = [],
 ): AttributeDisplayItem[] {
-  return metadataToAttributeRows(metadata, properties)
-    .filter((row) => row.label.trim() || row.value.trim())
+  const rows =
+    properties.length > 0
+      ? metadataToFixedPropertyRows(metadata, properties)
+      : metadataToAttributeRows(metadata, properties);
+
+  return rows
+    .filter((row) => row.value.trim())
     .map((row) => ({
       key: row.label.trim() || row.storageKey,
-      value: row.value.trim() || "—",
+      value: row.value.trim(),
     }));
 }
 

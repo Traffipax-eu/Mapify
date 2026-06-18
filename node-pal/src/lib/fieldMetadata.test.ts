@@ -1,11 +1,47 @@
 import { describe, expect, it } from "vitest";
-import { formatFieldCellValue, resolveFieldMetadataValue } from "./fieldMetadata";
+import { formatFieldCellValue, getBlockFieldAttributeDefinitions, resolveFieldMetadataValue } from "./fieldMetadata";
 import type { PropertyDefinition } from "./storage";
 
 const properties: PropertyDefinition[] = [
   { id: "prop_type", name: "Type", type: "text" },
   { id: "prop_len", name: "Length", type: "text" },
 ];
+
+describe("getBlockFieldAttributeDefinitions", () => {
+  it("uses schema field properties when available", () => {
+    const schema = {
+      nodeGroups: [
+        {
+          id: "group_1",
+          name: "Table",
+          properties: [{ id: "prop_type", name: "Type", type: "text" as const }],
+        },
+      ],
+      customObjectSchemas: [],
+      fieldTypes: [],
+      globalProperties: [],
+      timestamp: Date.now(),
+    };
+
+    expect(
+      getBlockFieldAttributeDefinitions(schema, { nodeGroupId: "group_1" }, [
+        { metadata: { custom: "x" } },
+      ]),
+    ).toEqual([
+      expect.objectContaining({ id: "prop_type", name: "Type" }),
+    ]);
+  });
+
+  it("falls back to shared block keys when schema has no field properties", () => {
+    expect(
+      getBlockFieldAttributeDefinitions(
+        { nodeGroups: [], customObjectSchemas: [], fieldTypes: [], globalProperties: [], timestamp: 0 },
+        { nodeGroupId: "group_1", fieldAttributeKeys: ["Type"] },
+        [{ metadata: { Length: "10" } }],
+      ).map((property) => property.id),
+    ).toEqual(["Length", "Type"]);
+  });
+});
 
 describe("resolveFieldMetadataValue", () => {
   it("reads values stored by property id", () => {

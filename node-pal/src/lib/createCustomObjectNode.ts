@@ -15,6 +15,7 @@ export type CustomObjectNodeData = {
   tableExpanded?: boolean;
   metadata?: MetadataValues;
   visibleColumns?: string[];
+  fieldAttributeKeys?: string[];
 };
 
 export function createCustomObjectNode(

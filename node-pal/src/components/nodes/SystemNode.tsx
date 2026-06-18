@@ -14,8 +14,12 @@ import {
 import type { MetadataValues } from "@/lib/storage";
 import { useLineage } from "@/contexts/LineageContext";
 import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
-import { formatFieldCellValue, getFieldTableColumns } from "@/lib/fieldMetadata";
-import { getNodeGroupProperties, getFieldProperties } from "@/lib/schemaProperties";
+import {
+  attributeDefinitionsToTableColumns,
+  formatFieldCellValue,
+  getBlockFieldAttributeDefinitions,
+} from "@/lib/fieldMetadata";
+import { getNodeGroupProperties } from "@/lib/schemaProperties";
 import {
   createSection,
   DEFAULT_SECTION_ID,
@@ -68,6 +72,8 @@ export type SystemNodeData = {
   tableExpanded?: boolean;
   metadata?: MetadataValues;
   visibleColumns?: string[];
+  /** Shared field attribute keys for this block when no schema properties exist. */
+  fieldAttributeKeys?: string[];
 };
 
 function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeData>) {
@@ -90,28 +96,19 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const hasImpact = impactNodeIds.has(id);
   const fieldLineageActive = hasLineage;
   const activeFieldIds = activeFieldIdsByNode.get(id) ?? new Set<string>();
-  const fieldProperties = getFieldProperties(schema, data.nodeGroupId);
-  const tableColumns = useMemo(() => {
-    const schemaColumns = getFieldTableColumns(schema, data.nodeGroupId, data.visibleColumns);
-    if (schemaColumns.length > 0) return schemaColumns;
-
-    const keys = new Set<string>();
-    for (const field of fields) {
-      for (const [key, value] of Object.entries(field.metadata ?? {})) {
-        if (value !== undefined && value !== null && value !== "") {
-          keys.add(key);
-        }
-      }
-    }
-
-    return Array.from(keys)
-      .sort()
-      .map((key) => ({
-        id: key,
-        name: fieldProperties.find((property) => property.id === key)?.name ?? key,
-        scope: "group" as const,
-      }));
-  }, [schema, data.nodeGroupId, data.visibleColumns, fields, fieldProperties]);
+  const fieldAttributeDefinitions = useMemo(
+    () =>
+      getBlockFieldAttributeDefinitions(
+        schema,
+        { nodeGroupId: data.nodeGroupId, fieldAttributeKeys: data.fieldAttributeKeys },
+        fields,
+      ),
+    [schema, data.nodeGroupId, data.fieldAttributeKeys, fields],
+  );
+  const tableColumns = useMemo(
+    () => attributeDefinitionsToTableColumns(fieldAttributeDefinitions, data.visibleColumns),
+    [fieldAttributeDefinitions, data.visibleColumns],
+  );
 
   const fullTableGridStyle = useMemo(
     () => ({
@@ -312,7 +309,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           variant={tableExpanded ? "expanded" : "compact"}
           fullTableGridStyle={fullTableGridStyle}
           tableColumns={tableColumns}
-          fieldProperties={fieldProperties}
+          fieldProperties={fieldAttributeDefinitions}
           isActive={activeFieldIds.has(field.id)}
           isFaded={fieldLineageActive && !activeFieldIds.has(field.id)}
           onFieldSelect={onFieldSelect}
@@ -586,8 +583,8 @@ type FieldRowProps = {
   field: Field;
   variant: "compact" | "expanded";
   fullTableGridStyle: React.CSSProperties;
-  tableColumns: ReturnType<typeof getFieldTableColumns>;
-  fieldProperties: ReturnType<typeof getFieldProperties>;
+  tableColumns: ReturnType<typeof attributeDefinitionsToTableColumns>;
+  fieldProperties: ReturnType<typeof getBlockFieldAttributeDefinitions>;
   isActive: boolean;
   isFaded: boolean;
   onFieldSelect: (nodeId: string, fieldId: string) => void;

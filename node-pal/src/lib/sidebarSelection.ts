@@ -9,6 +9,7 @@ import {
   getNodeGroupProperties,
   type ScopedProperty,
 } from "@/lib/schemaProperties";
+import { getBlockFieldAttributeDefinitions } from "@/lib/fieldMetadata";
 
 export type SidebarSelectionContext = "node" | "field";
 
@@ -21,6 +22,8 @@ export type ResolvedSidebarSelection = {
   metadata: MetadataValues;
   properties: ScopedProperty[];
   selectionContext: SidebarSelectionContext;
+  lockFieldPropertyKeys: boolean;
+  allowAddFieldAttributes: boolean;
 };
 
 function safeMetadata(value: unknown): MetadataValues {
@@ -71,6 +74,13 @@ export function resolveSidebarSelection(
     if (selectedFieldId) {
       const field = safeFields(nodeData.fields).find((item) => item?.id === selectedFieldId);
       if (!field) return null;
+      const fields = safeFields(nodeData.fields);
+      const schemaFieldProps = getFieldProperties(schema, nodeGroupId);
+      const fieldAttributeDefinitions = getBlockFieldAttributeDefinitions(
+        schema,
+        { nodeGroupId, fieldAttributeKeys: nodeData.fieldAttributeKeys },
+        fields,
+      );
 
       return {
         nodeId: selectedNodeId,
@@ -79,8 +89,10 @@ export function resolveSidebarSelection(
         fieldId: selectedFieldId,
         fieldLabel: typeof field.label === "string" ? field.label : "Field",
         metadata: safeMetadata(field.metadata),
-        properties: normalizeSidebarProperties(getFieldProperties(schema, nodeGroupId)),
+        properties: normalizeSidebarProperties(fieldAttributeDefinitions),
         selectionContext: "field",
+        lockFieldPropertyKeys: fieldAttributeDefinitions.length > 0,
+        allowAddFieldAttributes: schemaFieldProps.length === 0,
       };
     }
 
@@ -93,6 +105,8 @@ export function resolveSidebarSelection(
       metadata: safeMetadata(nodeData.metadata),
       properties: normalizeSidebarProperties(getNodeGroupProperties(schema)),
       selectionContext: "node",
+      lockFieldPropertyKeys: false,
+      allowAddFieldAttributes: false,
     };
   }
 
@@ -103,6 +117,14 @@ export function resolveSidebarSelection(
   if (selectedFieldId) {
     const field = safeFields(nodeData.fields).find((item) => item?.id === selectedFieldId);
     if (!field) return null;
+    const fields = safeFields(nodeData.fields);
+    const schemaFieldProps = getCustomObjectFieldProperties(schema, objectId);
+    const fieldAttributeDefinitions = getBlockFieldAttributeDefinitions(
+      schema,
+      { objectId, fieldAttributeKeys: nodeData.fieldAttributeKeys },
+      fields,
+      "artifact",
+    );
 
     return {
       nodeId: selectedNodeId,
@@ -111,8 +133,10 @@ export function resolveSidebarSelection(
       fieldId: selectedFieldId,
       fieldLabel: typeof field.label === "string" ? field.label : "Field",
       metadata: safeMetadata(field.metadata),
-      properties: normalizeSidebarProperties(getCustomObjectFieldProperties(schema, objectId)),
+      properties: normalizeSidebarProperties(fieldAttributeDefinitions),
       selectionContext: "field",
+      lockFieldPropertyKeys: fieldAttributeDefinitions.length > 0,
+      allowAddFieldAttributes: schemaFieldProps.length === 0,
     };
   }
 
@@ -125,5 +149,7 @@ export function resolveSidebarSelection(
     metadata: safeMetadata(nodeData.metadata),
     properties: normalizeSidebarProperties(getNodeGroupProperties(schema)),
     selectionContext: "node",
+    lockFieldPropertyKeys: false,
+    allowAddFieldAttributes: false,
   };
 }

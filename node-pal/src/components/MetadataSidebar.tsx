@@ -19,7 +19,9 @@ interface MetadataSidebarProps {
   metadata?: MetadataValues | null;
   properties?: ScopedProperty[] | null;
   selectionContext?: MetadataSelectionContext | null;
-  onUpdateMetadata: (nodeId: string, metadata: MetadataValues) => void;
+  lockFieldPropertyKeys?: boolean;
+  allowAddFieldAttributes?: boolean;
+  onUpdateMetadata: (nodeId: string, metadata: MetadataValues, propertyKeys?: string[]) => void;
   onRenameNode?: (nodeId: string, label: string) => void;
   onRenameField?: (nodeId: string, fieldId: string, label: string) => void;
   onDeleteField?: (nodeId: string, fieldId: string) => void;
@@ -44,6 +46,8 @@ export function MetadataSidebar({
   metadata: metadataProp,
   properties: propertiesProp,
   selectionContext: selectionContextProp,
+  lockFieldPropertyKeys = false,
+  allowAddFieldAttributes = false,
   onUpdateMetadata,
   onRenameNode,
   onRenameField,
@@ -79,6 +83,8 @@ export function MetadataSidebar({
       displayName={displayName}
       metadata={metadata}
       properties={properties}
+      lockFieldPropertyKeys={isFieldContext && lockFieldPropertyKeys}
+      allowAddFieldAttributes={isFieldContext && allowAddFieldAttributes}
       onClose={onClose}
       onUpdateMetadata={onUpdateMetadata}
       onRenameNode={onRenameNode}
@@ -96,6 +102,8 @@ function MetadataSidebarContent({
   displayName,
   metadata,
   properties,
+  lockFieldPropertyKeys,
+  allowAddFieldAttributes,
   stackOffset,
   onClose,
   onUpdateMetadata,
@@ -110,9 +118,11 @@ function MetadataSidebarContent({
   displayName: string;
   metadata: MetadataValues;
   properties: ScopedProperty[];
+  lockFieldPropertyKeys: boolean;
+  allowAddFieldAttributes: boolean;
   stackOffset: boolean;
   onClose: () => void;
-  onUpdateMetadata: (nodeId: string, metadata: MetadataValues) => void;
+  onUpdateMetadata: (nodeId: string, metadata: MetadataValues, propertyKeys?: string[]) => void;
   onRenameNode?: (nodeId: string, label: string) => void;
   onRenameField?: (nodeId: string, fieldId: string, label: string) => void;
   onDeleteField?: (nodeId: string, fieldId: string) => void;
@@ -206,7 +216,9 @@ function MetadataSidebarContent({
             metadata={metadata}
             properties={properties}
             resetKey={`${nodeId}-${fieldId ?? "node"}`}
-            onChange={(next) => onUpdateMetadata(nodeId, next)}
+            lockPropertyKeys={isFieldContext && lockFieldPropertyKeys}
+            allowAddBlockAttributes={isFieldContext && allowAddFieldAttributes}
+            onChange={(next, propertyKeys) => onUpdateMetadata(nodeId, next, propertyKeys)}
           />
         </div>
       </div>

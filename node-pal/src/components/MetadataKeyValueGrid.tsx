@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MetadataValues } from "@/lib/storage";
@@ -6,7 +6,9 @@ import type { ScopedProperty } from "@/lib/schemaProperties";
 import {
   attributeRowsToMetadata,
   createEmptyAttributeRow,
+  fixedPropertyRowsToMetadata,
   metadataToAttributeRows,
+  metadataToFixedPropertyRows,
   type AttributeRow,
 } from "@/lib/metadataAttributes";
 
@@ -14,15 +16,32 @@ type Props = {
   metadata: MetadataValues;
   properties?: ScopedProperty[];
   resetKey: string;
-  onChange: (metadata: MetadataValues) => void;
+  lockPropertyKeys?: boolean;
+  allowAddBlockAttributes?: boolean;
+  onChange: (metadata: MetadataValues, propertyKeys?: string[]) => void;
 };
 
 type EditingTarget = { rowId: string; field: "key" | "value" } | null;
 
-export function MetadataKeyValueGrid({ metadata, properties = [], resetKey, onChange }: Props) {
+export function MetadataKeyValueGrid({
+  metadata,
+  properties = [],
+  resetKey,
+  lockPropertyKeys = false,
+  allowAddBlockAttributes = false,
+  onChange,
+}: Props) {
   const safeProperties = Array.isArray(properties) ? properties : [];
+  const useFixedRows = lockPropertyKeys && safeProperties.length > 0;
+  const propertySignature = useMemo(
+    () => safeProperties.map((property) => property.id).join("|"),
+    [safeProperties],
+  );
+
   const [rows, setRows] = useState<AttributeRow[]>(() =>
-    metadataToAttributeRows(metadata, safeProperties),
+    useFixedRows
+      ? metadataToFixedPropertyRows(metadata, safeProperties)
+      : metadataToAttributeRows(metadata, safeProperties),
   );
   const [editing, setEditing] = useState<EditingTarget>(null);
   const pendingFocusRef = useRef<"key" | "value" | null>(null);
@@ -30,20 +49,37 @@ export function MetadataKeyValueGrid({ metadata, properties = [], resetKey, onCh
   rowsRef.current = rows;
 
   useEffect(() => {
-    setRows(metadataToAttributeRows(metadata, safeProperties));
+    setRows(
+      useFixedRows
+        ? metadataToFixedPropertyRows(metadata, safeProperties)
+        : metadataToAttributeRows(metadata, safeProperties),
+    );
     setEditing(null);
     pendingFocusRef.current = null;
     // Only reset local row state when the sidebar selection changes, not on every metadata object reference change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey]);
 
+  useEffect(() => {
+    if (!useFixedRows) return;
+    setRows(metadataToFixedPropertyRows(metadata, safeProperties));
+  }, [metadata, propertySignature, useFixedRows, safeProperties]);
+
   const persistRows = useCallback(
-    (nextRows: AttributeRow[]) => {
+    (nextRows: AttributeRow[], nextProperties: ScopedProperty[] = safeProperties) => {
       rowsRef.current = nextRows;
       setRows(nextRows);
-      onChange(attributeRowsToMetadata(nextRows, safeProperties));
+      if (lockPropertyKeys && nextProperties.length > 0) {
+        const { metadata: nextMetadata, propertyKeys } = fixedPropertyRowsToMetadata(
+          nextRows,
+          nextProperties,
+        );
+        onChange(nextMetadata, propertyKeys);
+        return;
+      }
+      onChange(attributeRowsToMetadata(nextRows, nextProperties));
     },
-    [onChange, safeProperties],
+    [lockPropertyKeys, onChange, safeProperties],
   );
 
   const commitRow = useCallback(
@@ -57,21 +93,51 @@ export function MetadataKeyValueGrid({ metadata, properties = [], resetKey, onCh
 
   const removeRow = useCallback(
     (rowId: string) => {
-      const next = rowsRef.current.filter((row) => row.rowId !== rowId);
-      persistRows(next);
+      if (useFixedRows) {
+        const nextProperties = safeProperties.filter((property) => property.id !== rowId);
+        const nextRows = rowsRef.current.filter((row) => row.rowId !== rowId);
+        persistRows(nextRows, nextProperties);
+      } else {
+        const next = rowsRef.current.filter((row) => row.rowId !== rowId);
+        persistRows(next);
+      }
       setEditing(null);
     },
-    [persistRows],
+    [persistRows, safeProperties, useFixedRows],
   );
 
   const addRow = useCallback(() => {
+    if (useFixedRows && allowAddBlockAttributes) {
+      const newId = `attr_${Date.now()}`;
+      const nextProperties = [
+        ...safeProperties,
+        { id: newId, name: "New attribute", type: "text" as const, scope: "group" as const },
+      ];
+      const nextRows = [
+        ...rowsRef.current,
+        { rowId: newId, storageKey: newId, label: "New attribute", value: "" },
+      ];
+      rowsRef.current = nextRows;
+      setRows(nextRows);
+      setEditing({ rowId: newId, field: "value" });
+      pendingFocusRef.current = "value";
+      const { metadata: nextMetadata, propertyKeys } = fixedPropertyRowsToMetadata(
+        nextRows,
+        nextProperties,
+      );
+      onChange(nextMetadata, propertyKeys);
+      return;
+    }
+
     const row = createEmptyAttributeRow();
     pendingFocusRef.current = "key";
     const next = [...rowsRef.current, row];
     rowsRef.current = next;
     setRows(next);
     setEditing({ rowId: row.rowId, field: "key" });
-  }, []);
+  }, [allowAddBlockAttributes, onChange, safeProperties, useFixedRows]);
+
+  const showAddButton = !useFixedRows || allowAddBlockAttributes;
 
   return (
     <div className="metadata-kv-grid">
@@ -89,6 +155,8 @@ export function MetadataKeyValueGrid({ metadata, properties = [], resetKey, onCh
           row={row}
           editing={editing}
           pendingFocusRef={pendingFocusRef}
+          keysLocked={useFixedRows}
+          allowRemove={!useFixedRows || allowAddBlockAttributes}
           onStartEdit={(field) => setEditing({ rowId: row.rowId, field })}
           onCommit={(patch) => commitRow(row.rowId, patch)}
           onRemove={() => removeRow(row.rowId)}
@@ -96,16 +164,18 @@ export function MetadataKeyValueGrid({ metadata, properties = [], resetKey, onCh
         />
       ))}
 
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="metadata-kv-grid__add"
-        onClick={addRow}
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Add property
-      </Button>
+      {showAddButton && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="metadata-kv-grid__add"
+          onClick={addRow}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add property
+        </Button>
+      )}
     </div>
   );
 }
@@ -114,6 +184,8 @@ function AttributeRowEditor({
   row,
   editing,
   pendingFocusRef,
+  keysLocked,
+  allowRemove,
   onStartEdit,
   onCommit,
   onRemove,
@@ -122,6 +194,8 @@ function AttributeRowEditor({
   row: AttributeRow;
   editing: EditingTarget;
   pendingFocusRef: React.MutableRefObject<"key" | "value" | null>;
+  keysLocked: boolean;
+  allowRemove: boolean;
   onStartEdit: (field: "key" | "value") => void;
   onCommit: (patch: Partial<AttributeRow>) => void;
   onRemove: () => void;
@@ -129,7 +203,7 @@ function AttributeRowEditor({
 }) {
   const keyInputRef = useRef<HTMLInputElement>(null);
   const valueInputRef = useRef<HTMLInputElement>(null);
-  const isEditingKey = editing?.rowId === row.rowId && editing.field === "key";
+  const isEditingKey = !keysLocked && editing?.rowId === row.rowId && editing.field === "key";
   const isEditingValue = editing?.rowId === row.rowId && editing.field === "value";
   const [keyDraft, setKeyDraft] = useState(row.label);
   const [valueDraft, setValueDraft] = useState(row.value);
@@ -164,7 +238,7 @@ function AttributeRowEditor({
 
   const commitValue = () => {
     onCommit({
-      label: keyDraft.trim() || row.label,
+      label: keysLocked ? row.label : keyDraft.trim() || row.label,
       storageKey: row.storageKey,
       value: valueDraft,
     });
@@ -197,6 +271,10 @@ function AttributeRowEditor({
             className="metadata-kv-grid__input"
             placeholder="Property name"
           />
+        ) : keysLocked ? (
+          <span className="metadata-kv-grid__display metadata-kv-grid__display--locked">
+            {row.label.trim() || <span className="metadata-kv-grid__placeholder">Attribute</span>}
+          </span>
         ) : (
           <button type="button" className="metadata-kv-grid__display" onClick={() => onStartEdit("key")}>
             {row.label.trim() || <span className="metadata-kv-grid__placeholder">Property name</span>}
@@ -228,15 +306,17 @@ function AttributeRowEditor({
         )}
       </div>
 
-      <button
-        type="button"
-        className="metadata-kv-grid__remove"
-        onClick={onRemove}
-        title="Remove property"
-        aria-label="Remove property"
-      >
-        <Trash2 className="h-3 w-3" />
-      </button>
+      {allowRemove && (
+        <button
+          type="button"
+          className="metadata-kv-grid__remove"
+          onClick={onRemove}
+          title="Remove property"
+          aria-label="Remove property"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      )}
     </div>
   );
 }

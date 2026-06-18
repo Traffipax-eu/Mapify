@@ -1,10 +1,20 @@
 import type { MetadataValues, PropertyDefinition, Schema } from "@/lib/storage";
-import { getCustomObjectFieldProperties, getFieldProperties } from "@/lib/schemaProperties";
+import {
+  getCustomObjectFieldProperties,
+  getFieldProperties,
+  type ScopedProperty,
+} from "@/lib/schemaProperties";
 
 export type FieldTableColumn = {
   id: string;
   name: string;
   scope: "group";
+};
+
+export type BlockFieldAttributeSource = {
+  nodeGroupId?: string;
+  objectId?: string;
+  fieldAttributeKeys?: string[];
 };
 
 function isEmptyMetadataValue(value: unknown): boolean {
@@ -56,16 +66,42 @@ export function resolveFieldMetadataValue(
   return undefined;
 }
 
-export function getFieldTableColumns(
-  schema: Schema,
-  scopeId: string | undefined,
-  visibleColumns: string[] | undefined,
+/** Shared field attribute definitions for every field in a block or data asset. */
+export function getBlockFieldAttributeDefinitions(
+  schema: Schema | null | undefined,
+  source: BlockFieldAttributeSource,
+  fields: Array<{ metadata?: MetadataValues }>,
   scope: "block" | "artifact" = "block",
-): FieldTableColumn[] {
-  const properties =
+): ScopedProperty[] {
+  const scopeId = scope === "artifact" ? source.objectId : source.nodeGroupId;
+  const schemaProps =
     scope === "artifact"
       ? getCustomObjectFieldProperties(schema, scopeId)
       : getFieldProperties(schema, scopeId);
+  if (schemaProps.length > 0) return schemaProps;
+
+  const keys = new Set<string>(source.fieldAttributeKeys ?? []);
+  for (const field of fields) {
+    for (const key of Object.keys(field.metadata ?? {})) {
+      const trimmed = key.trim();
+      if (trimmed) keys.add(trimmed);
+    }
+  }
+
+  return Array.from(keys)
+    .sort((a, b) => a.localeCompare(b))
+    .map((id) => ({
+      id,
+      name: id,
+      type: "text" as const,
+      scope: "group" as const,
+    }));
+}
+
+export function attributeDefinitionsToTableColumns(
+  properties: ScopedProperty[],
+  visibleColumns?: string[],
+): FieldTableColumn[] {
   const allColumns = properties.map((property) => ({
     id: property.id,
     name: property.name,
@@ -80,6 +116,19 @@ export function getFieldTableColumns(
   return visibleColumns
     .map((columnId) => columnMap.get(columnId) ?? null)
     .filter((column): column is FieldTableColumn => column !== null);
+}
+
+export function getFieldTableColumns(
+  schema: Schema,
+  scopeId: string | undefined,
+  visibleColumns: string[] | undefined,
+  scope: "block" | "artifact" = "block",
+): FieldTableColumn[] {
+  const properties =
+    scope === "artifact"
+      ? getCustomObjectFieldProperties(schema, scopeId)
+      : getFieldProperties(schema, scopeId);
+  return attributeDefinitionsToTableColumns(properties, visibleColumns);
 }
 
 export function formatFieldCellValue(

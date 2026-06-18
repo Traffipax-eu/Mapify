@@ -2592,6 +2592,14 @@
   word-break: break-word;
 }
 
+.metadata-kv-grid__display--locked {
+  cursor: default;
+  color: var(--color-foreground);
+}
+.metadata-kv-grid__display--locked:hover {
+  background: transparent;
+}
+
 .metadata-kv-grid__display:hover {
   background: color-mix(in oklch, var(--color-muted) 35%, transparent);
 }

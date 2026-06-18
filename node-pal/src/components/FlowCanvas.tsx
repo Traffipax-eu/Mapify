@@ -66,7 +66,13 @@ import { LineageProvider, type LineageContextValue } from "@/contexts/LineageCon
 import { NodeCanvasProvider, type NodeCanvasContextValue } from "@/contexts/NodeCanvasContext";
 import { buildMarker } from "@/lib/edgeMarkers";
 import { computeLineage, decorateEdgesForDisplay } from "@/lib/lineageTraversal";
-import { sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
+import { pickMetadataForKeys, sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
+import { getBlockFieldAttributeDefinitions } from "@/lib/fieldMetadata";
+import {
+  getCustomObjectFieldProperties,
+  getFieldProperties,
+  pickMetadataForProperties,
+} from "@/lib/schemaProperties";
 import { resolveSidebarSelection } from "@/lib/sidebarSelection";
 import { normalizeSchema } from "@/lib/schemaProperties";
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
@@ -1190,31 +1196,67 @@ function InnerCanvas() {
   );
 
   const handleUpdateFieldMetadata = useCallback(
-    (nodeId: string, fieldId: string, metadata: MetadataValues) => {
-      const sanitized = sanitizeFreeformMetadata(metadata);
+    (nodeId: string, fieldId: string, metadata: MetadataValues, propertyKeys?: string[]) => {
+      const sanitizedInput = sanitizeFreeformMetadata(metadata);
+      let selectedMetadata = sanitizedInput;
 
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n;
-          const clean = stripDisplayData(n.data as Record<string, unknown>) as {
-            fields?: Array<{ id: string; metadata?: MetadataValues; [key: string]: unknown }>;
-            [key: string]: unknown;
+          const clean = stripDisplayData(n.data as Record<string, unknown>) as SystemNodeData & {
+            objectId?: string;
           };
+          const isCustomObject = n.type === "customObject";
+          const schemaProps = isCustomObject
+            ? getCustomObjectFieldProperties(schema, clean.objectId)
+            : getFieldProperties(schema, clean.nodeGroupId);
           const fields = Array.isArray(clean.fields) ? clean.fields : [];
+
+          if (schemaProps.length > 0) {
+            selectedMetadata = pickMetadataForProperties(sanitizedInput, schemaProps);
+            return {
+              ...n,
+              data: {
+                ...clean,
+                fields: fields.map((field) =>
+                  field.id === fieldId ? { ...field, metadata: selectedMetadata } : field,
+                ),
+              },
+            };
+          }
+
+          const nextFieldAttributeKeys =
+            propertyKeys ??
+            getBlockFieldAttributeDefinitions(
+              schema,
+              isCustomObject
+                ? { objectId: clean.objectId, fieldAttributeKeys: clean.fieldAttributeKeys }
+                : { nodeGroupId: clean.nodeGroupId, fieldAttributeKeys: clean.fieldAttributeKeys },
+              fields,
+              isCustomObject ? "artifact" : "block",
+            ).map((property) => property.id);
+
+          selectedMetadata = pickMetadataForKeys(sanitizedInput, nextFieldAttributeKeys);
+
           return {
             ...n,
             data: {
               ...clean,
-              fields: fields.map((field) =>
-                field.id === fieldId ? { ...field, metadata: sanitized } : field,
-              ),
+              fieldAttributeKeys: nextFieldAttributeKeys,
+              fields: fields.map((field) => ({
+                ...field,
+                metadata:
+                  field.id === fieldId
+                    ? selectedMetadata
+                    : pickMetadataForKeys(field.metadata, nextFieldAttributeKeys),
+              })),
             },
           };
         }),
       );
-      setSelectedFieldMetadata(sanitized);
+      setSelectedFieldMetadata(selectedMetadata);
     },
-    [setNodes],
+    [setNodes, schema],
   );
 
   const nodeCanvasValue = useMemo<NodeCanvasContextValue>(
@@ -2005,9 +2047,12 @@ function InnerCanvas() {
         metadata={sidebarSelection?.metadata ?? {}}
         properties={sidebarSelection?.properties ?? []}
         selectionContext={sidebarSelectionContext}
+        lockFieldPropertyKeys={sidebarSelection?.lockFieldPropertyKeys ?? false}
+        allowAddFieldAttributes={sidebarSelection?.allowAddFieldAttributes ?? false}
         onUpdateMetadata={
           sidebarSelection?.fieldId
-            ? (nodeId, metadata) => handleUpdateFieldMetadata(nodeId, sidebarSelection.fieldId!, metadata)
+            ? (nodeId, metadata, propertyKeys) =>
+                handleUpdateFieldMetadata(nodeId, sidebarSelection.fieldId!, metadata, propertyKeys)
             : handleUpdateMetadata
         }
         onRenameNode={handleRenameNode}

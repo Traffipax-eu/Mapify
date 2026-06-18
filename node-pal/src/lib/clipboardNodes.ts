@@ -45,6 +45,7 @@ function cloneSystemNodeData(data: SystemNodeData): SystemNodeData {
     metadata: cloned.metadata ? { ...cloned.metadata } : {},
     sections: cloned.sections?.map((section) => ({ ...section })),
     visibleColumns: cloned.visibleColumns ? [...cloned.visibleColumns] : undefined,
+    fieldAttributeKeys: cloned.fieldAttributeKeys ? [...cloned.fieldAttributeKeys] : undefined,
   };
 }
 
