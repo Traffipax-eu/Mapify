@@ -76,7 +76,7 @@ export function GlossaryView({ nodes, schema }: GlossaryViewProps) {
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
         <BookOpen className="h-10 w-10 opacity-40" />
         <p className="text-sm">No fields on the canvas yet.</p>
-        <p className="text-xs">Add system nodes and fields in Canvas View to populate the glossary.</p>
+        <p className="text-xs">Add blocks and fields in Canvas View to populate the glossary.</p>
       </div>
     );
   }
@@ -111,7 +111,7 @@ export function GlossaryView({ nodes, schema }: GlossaryViewProps) {
 
               <div className="glossary-table rounded-xl border border-border overflow-hidden shadow-sm">
                 <div className="glossary-table__header" style={{ gridTemplateColumns: gridTemplate }}>
-                  <div className="glossary-table__cell glossary-table__cell--header">Node</div>
+                  <div className="glossary-table__cell glossary-table__cell--header">Block</div>
                   <div className="glossary-table__cell glossary-table__cell--header">Field</div>
                   {columns.map((column) => (
                     <div

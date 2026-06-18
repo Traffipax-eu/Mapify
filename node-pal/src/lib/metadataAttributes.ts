@@ -94,15 +94,17 @@ export function fixedPropertyRowsToMetadata(
   properties: ScopedProperty[] = [],
 ): { metadata: MetadataValues; propertyKeys: string[] } {
   const propertyList = (properties ?? []).filter((property) => property?.id);
-  const rowByKey = new Map(
-    (rows ?? []).map((row) => [row.storageKey || row.rowId, row] as const),
-  );
   const metadata: MetadataValues = {};
   const propertyKeys: string[] = [];
 
   for (const property of propertyList) {
     propertyKeys.push(property.id);
-    const row = rowByKey.get(property.id);
+    const row = (rows ?? []).find(
+      (item) =>
+        item.storageKey === property.id ||
+        item.rowId === property.id ||
+        item.label.trim().toLowerCase() === property.name.trim().toLowerCase(),
+    );
     if (!row || row.value.trim() === "") continue;
     metadata[property.id] = row.value;
   }

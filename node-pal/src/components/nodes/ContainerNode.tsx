@@ -59,7 +59,7 @@ function ContainerNodeImpl({ id, data, selected }: NodeProps<ContainerNodeData>)
               event.stopPropagation();
               handleUngroup();
             }}
-            title="Ungroup — release child nodes onto the canvas"
+            title="Ungroup — release child blocks onto the canvas"
           >
             <Ungroup className="h-3.5 w-3.5" />
             <span>Ungroup</span>

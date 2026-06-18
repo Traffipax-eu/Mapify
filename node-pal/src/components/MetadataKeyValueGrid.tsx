@@ -62,9 +62,10 @@ export function MetadataKeyValueGrid({
 
   useEffect(() => {
     if (!useFixedRows) return;
+    if (editing) return;
     if (rowsRef.current.some((row) => !row.storageKey)) return;
     setRows(metadataToFixedPropertyRows(metadata, safeProperties));
-  }, [metadata, propertySignature, useFixedRows, safeProperties]);
+  }, [propertySignature, useFixedRows, safeProperties, editing]);
 
   const isDraftBlockPropertyRow = useCallback(
     (row: AttributeRow) => useFixedRows && allowAddBlockAttributes && !row.storageKey,

@@ -67,11 +67,10 @@ import { NodeCanvasProvider, type NodeCanvasContextValue } from "@/contexts/Node
 import { buildMarker } from "@/lib/edgeMarkers";
 import { computeLineage, decorateEdgesForDisplay } from "@/lib/lineageTraversal";
 import { pickMetadataForKeys, sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
-import { getBlockFieldAttributeDefinitions } from "@/lib/fieldMetadata";
+import { getBlockFieldAttributeDefinitions, normalizeMetadataForProperties } from "@/lib/fieldMetadata";
 import {
   getCustomObjectFieldProperties,
   getFieldProperties,
-  pickMetadataForProperties,
 } from "@/lib/schemaProperties";
 import { resolveSidebarSelection } from "@/lib/sidebarSelection";
 import { normalizeSchema } from "@/lib/schemaProperties";
@@ -1029,7 +1028,7 @@ function InnerCanvas() {
     (nodeId: string) => {
       setNodes((nds) => nds.filter((n) => n.id !== nodeId));
       cleanupAfterNodeDelete([nodeId]);
-      toast.success("Node deleted");
+      toast.success("Block deleted");
     },
     [setNodes, cleanupAfterNodeDelete],
   );
@@ -1213,7 +1212,7 @@ function InnerCanvas() {
           const fields = Array.isArray(clean.fields) ? clean.fields : [];
 
           if (schemaProps.length > 0) {
-            selectedMetadata = pickMetadataForProperties(sanitizedInput, schemaProps);
+            selectedMetadata = normalizeMetadataForProperties(sanitizedInput, schemaProps);
             return {
               ...n,
               data: {
@@ -1379,7 +1378,7 @@ function InnerCanvas() {
         return;
       }
       if (rfInstance.getNodes().length === 0) {
-        toast.error("Add nodes to the canvas before exporting");
+        toast.error("Add blocks to the canvas before exporting");
         return;
       }
 
@@ -1923,7 +1922,7 @@ function InnerCanvas() {
             {nodes.length === 0 && (
               <Panel position="top-center">
                 <div className="rounded-md border border-dashed border-border bg-card/80 px-4 py-2 text-sm text-muted-foreground backdrop-blur">
-                  Drag systems or touchpoints from the sidebar onto the canvas
+                  Drag blocks or touchpoints from the sidebar onto the canvas
                 </div>
               </Panel>
             )}
@@ -1937,7 +1936,7 @@ function InnerCanvas() {
                       {selectedNodeLabel}
                       {selectedFieldLabel ? `.${selectedFieldLabel}` : ""}
                     </strong>{" "}
-                    · {lineage.nodeIds.size} node(s), {lineage.edgeIds.size} edge(s)
+                    · {lineage.nodeIds.size} block(s), {lineage.edgeIds.size} edge(s)
                   </span>
                   <button
                     onClick={() => setLineageAnchor(null)}

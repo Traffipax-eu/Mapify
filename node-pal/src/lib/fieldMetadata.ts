@@ -145,3 +145,21 @@ export function formatFieldCellValue(
 
   return String(value);
 }
+
+/** Normalize field metadata to schema property ids for reliable persistence. */
+export function normalizeMetadataForProperties(
+  metadata: MetadataValues | undefined,
+  properties: PropertyDefinition[] | null | undefined,
+): MetadataValues {
+  const list = Array.isArray(properties) ? properties : [];
+  const next: MetadataValues = {};
+
+  for (const property of list) {
+    if (!property?.id) continue;
+    const value = resolveFieldMetadataValue(metadata, property.id, list);
+    if (isEmptyMetadataValue(value)) continue;
+    next[property.id] = value;
+  }
+
+  return next;
+}

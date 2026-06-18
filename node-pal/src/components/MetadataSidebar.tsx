@@ -158,7 +158,7 @@ function MetadataSidebarContent({
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {isFieldContext ? "Field" : "Node"}
+            {isFieldContext ? "Field" : "Block"}
           </p>
           <h2 className="text-sm font-semibold truncate">{displayName}</h2>
         </div>
@@ -169,7 +169,7 @@ function MetadataSidebarContent({
               size="sm"
               onClick={onDeleteNode}
               className="text-muted-foreground hover:text-destructive"
-              title="Delete node"
+              title="Delete block"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -183,7 +183,7 @@ function MetadataSidebarContent({
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         <div className="space-y-1.5">
           <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {isFieldContext ? "Field name" : "Node name"}
+            {isFieldContext ? "Field name" : "Block name"}
           </label>
           <Input
             value={nameDraft}
@@ -210,7 +210,7 @@ function MetadataSidebarContent({
 
         <div className="space-y-2">
           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {isFieldContext ? "Field attributes" : "Node attributes"}
+            {isFieldContext ? "Field attributes" : "Block attributes"}
           </p>
           <MetadataKeyValueGrid
             metadata={metadata}

@@ -44,17 +44,17 @@ export function NodeNameDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Name this node</DialogTitle>
+          <DialogTitle>Name this block</DialogTitle>
           <DialogDescription>
             {blockName
               ? `You dropped "${blockName}" onto the canvas. What should this instance be called?`
-              : "What should this node be called?"}
+              : "What should this block be called?"}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="node-instance-name">Node name</Label>
+            <Label htmlFor="node-instance-name">Block name</Label>
             <Input
               id="node-instance-name"
               value={name}

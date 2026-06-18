@@ -189,7 +189,7 @@ export function GuideView() {
               </p>
               <ul>
                 <li>
-                  <strong>Fields</strong> are rows inside a block—add them inline at the bottom of the node. Names save
+                  <strong>Fields</strong> are rows inside a block—add them inline at the bottom of the block. Names save
                   instantly as you type and press Enter.
                 </li>
                 <li>
@@ -215,7 +215,7 @@ export function GuideView() {
               illustration={<MiniCustomObjectIllustration />}
             >
               <p>
-                <strong>Custom Objects</strong> are simplified nodes for files, reports, scripts, dashboards, API
+                <strong>Custom Objects</strong> are simplified blocks for files, reports, scripts, dashboards, API
                 endpoints, and more. They appear as sleek rounded squares with an icon and title—no internal fields.
               </p>
               <ul>
@@ -276,7 +276,7 @@ export function GuideView() {
               </p>
               <ul>
                 <li>
-                  Select a node or field on the canvas to open the metadata sidebar on the right.
+                  Select a block or field on the canvas to open the metadata sidebar on the right.
                 </li>
                 <li>
                   Click <strong>+ Add property</strong>, type a key, then a value. Changes persist on blur or Enter—no
@@ -315,7 +315,7 @@ export function GuideView() {
                   <div>
                     <p className="font-medium text-foreground">Container ungroup</p>
                     <p className="text-sm text-muted-foreground">
-                      Select a container and click <strong>Ungroup</strong> to release child nodes onto the canvas
+                      Select a container and click <strong>Ungroup</strong> to release child blocks onto the canvas
                       without deleting them.
                     </p>
                   </div>

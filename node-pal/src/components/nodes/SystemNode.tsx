@@ -332,7 +332,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
       {showSettings && (
         <div className="system-node__settings-panel nodrag nopan nowheel" onPointerDown={stopPointer}>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Node settings</span>
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Block settings</span>
             <button type="button" onClick={() => setShowSettings(false)} className="system-node__icon-btn system-node__icon-btn--static nodrag nopan">
               <X className="h-3.5 w-3.5" />
             </button>
@@ -433,7 +433,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                 setShowSettings((value) => !value);
               }}
               className="system-node__settings-btn nodrag nopan"
-              title="Node settings"
+              title="Block settings"
             >
               <Settings className="h-3.5 w-3.5" />
             </button>
@@ -445,7 +445,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                 onDeleteNode(id);
               }}
               className="system-node__delete-btn nodrag nopan"
-              title="Delete node"
+              title="Delete block"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>

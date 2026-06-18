@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatFieldCellValue, getBlockFieldAttributeDefinitions, resolveFieldMetadataValue } from "./fieldMetadata";
+import { formatFieldCellValue, getBlockFieldAttributeDefinitions, normalizeMetadataForProperties, resolveFieldMetadataValue } from "./fieldMetadata";
 import type { PropertyDefinition } from "./storage";
 
 const properties: PropertyDefinition[] = [
@@ -60,6 +60,14 @@ describe("resolveFieldMetadataValue", () => {
 
   it("reads raw metadata keys when no schema property exists", () => {
     expect(resolveFieldMetadataValue({ Notes: "hello" }, "Notes", [])).toBe("hello");
+  });
+});
+
+describe("normalizeMetadataForProperties", () => {
+  it("stores values under property id even when metadata uses the property name", () => {
+    expect(normalizeMetadataForProperties({ Type: "VARCHAR" }, properties)).toEqual({
+      prop_type: "VARCHAR",
+    });
   });
 });
 
