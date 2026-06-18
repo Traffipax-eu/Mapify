@@ -76,7 +76,8 @@ export function Sidebar({
         </button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto scroll-pt-2 px-4 pt-2 pb-4">
+      <div className="mapify-sidebar__blocks-list flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <div className="flex flex-col gap-3 px-4 pb-3 pt-4">
         {schema.nodeGroups.length === 0 && (
           <p className="text-xs text-muted-foreground italic px-1">
             No blocks yet. Create one to define your schema and drag it onto the canvas.
@@ -91,7 +92,9 @@ export function Sidebar({
             onDelete={() => onDeleteGroup(item.id)}
           />
         ))}
+        </div>
 
+        <div className="flex flex-col gap-3 px-4 pb-4">
         <Collapsible open={toolsOpen} onOpenChange={setToolsOpen} className="mt-2 border-t border-sidebar-border pt-4">
           <CollapsibleTrigger className="ui-bounce flex w-full items-center justify-between gap-2 rounded-xl px-1 py-2 text-sm font-bold tracking-tight hover:bg-accent/50 transition">
             <span className="flex items-center gap-2">
@@ -133,9 +136,10 @@ export function Sidebar({
             <CustomObjectCreatorCard onOpen={onOpenCustomObjectCreator} />
           </CollapsibleContent>
         </Collapsible>
+        </div>
       </div>
 
-      <div className="mt-auto border-t border-sidebar-border p-4 text-xs text-muted-foreground">
+      <div className="mt-auto shrink-0 border-t border-sidebar-border p-4 text-xs text-muted-foreground">
         Drag blocks, custom objects, or tools onto the canvas.
       </div>
     </aside>
@@ -169,10 +173,10 @@ function GroupCard({
     <div
       draggable
       onDragStart={(e) => onDragStart(e, item)}
-      className="palette-card ui-bounce group relative cursor-grab overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-[3px_3px_0_0_rgb(15_23_42/0.06)] active:cursor-grabbing"
+      className="palette-card palette-card--block ui-bounce group relative cursor-grab rounded-2xl border border-slate-200 bg-white p-3 shadow-[3px_3px_0_0_rgb(15_23_42/0.06)] active:cursor-grabbing"
     >
       <span
-        className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-[#0067F5] to-[#0DC5E7]"
+        className="absolute inset-x-0 top-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-[#0067F5] to-[#0DC5E7]"
         aria-hidden
       />
       <div className="flex items-start justify-between gap-2 pt-1">

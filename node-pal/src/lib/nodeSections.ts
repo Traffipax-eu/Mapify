@@ -50,7 +50,7 @@ export function getRenderableSections(data: SystemNodeData, fields: Field[]): Re
     })
     .map((section) => ({
       ...section,
-      showHeader: section.id !== DEFAULT_SECTION_ID,
+      showHeader: shouldShowSectionHeader(section),
     }));
 }
 
@@ -63,4 +63,10 @@ export function createSection(name = "New Section"): FieldSection {
     id: `sec_${Date.now()}`,
     name,
   };
+}
+
+export function shouldShowSectionHeader(section: FieldSection): boolean {
+  if (section.id === DEFAULT_SECTION_ID) return false;
+  if (section.name.trim().toLowerCase() === "general") return false;
+  return true;
 }

@@ -22,11 +22,15 @@ import {
   getEffectiveSections,
   getFieldsForSection,
   getRenderableSections,
-  hasExplicitSections,
   shouldShowSectionSelect,
 } from "@/lib/nodeSections";
 import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
+import {
+  FIELD_REORDER_MIME,
+  parseFieldReorder,
+  serializeFieldReorder,
+} from "@/lib/fieldReorderDnD";
 import { SmartHoverAttributes } from "@/components/SmartHoverAttributes";
 import { PlusHandle } from "./PlusHandle";
 
@@ -195,12 +199,23 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     update((d) => ({ ...d, icon }));
   };
 
+  const reorderFields = (sourceFieldId: string, targetFieldId: string) => {
+    if (sourceFieldId === targetFieldId) return;
+    update((d) => {
+      const list = [...(d.fields ?? [])];
+      const fromIndex = list.findIndex((field) => field.id === sourceFieldId);
+      const toIndex = list.findIndex((field) => field.id === targetFieldId);
+      if (fromIndex < 0 || toIndex < 0) return d;
+      const [moved] = list.splice(fromIndex, 1);
+      list.splice(toIndex, 0, moved);
+      return { ...d, fields: list };
+    });
+    refreshNodeLayout();
+  };
+
   const tableGridStyle = {
     gridTemplateColumns: `minmax(100px, 1.2fr) ${tableColumns.map(() => "minmax(72px, 1fr)").join(" ")} 52px`,
   };
-
-  const explicitSections = hasExplicitSections(data);
-  const headerSections = renderableSections.filter((section) => section.showHeader);
 
   const renderFieldList = (sectionFields: Field[]) => (
     <div className={tableExpanded ? "system-node__table" : "system-node__field-list"}>
@@ -233,6 +248,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           isFaded={fieldLineageActive && !activeFieldIds.has(field.id)}
           onFieldSelect={onFieldSelect}
           onDeleteField={onDeleteField}
+          onFieldReorder={reorderFields}
         />
       ))}
     </div>
@@ -369,9 +385,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           onPointerDown={stopPointer}
         >
           <div className="system-node__sections">
-            {!explicitSections && fields.length > 0 && renderFieldList(fields)}
-
-            {headerSections.map((section) => {
+            {renderableSections.map((section) => {
               const sectionFields = getFieldsForSection(fields, section.id);
               if (sectionFields.length === 0) return null;
               const isEditingSection = editingSectionId === section.id;
@@ -503,26 +517,26 @@ type FieldRowProps = {
   isFaded: boolean;
   onFieldSelect: (nodeId: string, fieldId: string) => void;
   onDeleteField: (nodeId: string, fieldId: string) => void;
+  onFieldReorder: (sourceFieldId: string, targetFieldId: string) => void;
 };
 
-function FieldConnectionAnchors({ fieldId }: { fieldId: string }) {
+function FieldConnectionHandle({
+  fieldId,
+  side,
+  type,
+}: {
+  fieldId: string;
+  side: "left" | "right";
+  type: "source" | "target";
+}) {
   return (
-    <>
-      <PlusHandle
-        type="target"
-        position={Position.Left}
-        id={`target-${fieldId}`}
-        variant="field"
-        className="field-handle field-handle--left"
-      />
-      <PlusHandle
-        type="source"
-        position={Position.Right}
-        id={`source-${fieldId}`}
-        variant="field"
-        className="field-handle field-handle--right"
-      />
-    </>
+    <PlusHandle
+      type={type}
+      position={side === "left" ? Position.Left : Position.Right}
+      id={`${type}-${fieldId}`}
+      variant="field"
+      className={`field-handle field-handle--${side}`}
+    />
   );
 }
 
@@ -537,11 +551,63 @@ export function FieldRow({
   isFaded,
   onFieldSelect,
   onDeleteField,
+  onFieldReorder,
 }: FieldRowProps) {
+  const [isDropTarget, setIsDropTarget] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartedRef = useRef(false);
+
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (dragStartedRef.current) return;
     onFieldSelect(nodeId, field.id);
   };
+
+  const handleReorderDragStart = (e: React.DragEvent) => {
+    e.stopPropagation();
+    dragStartedRef.current = true;
+    setIsDragging(true);
+    e.dataTransfer.setData(
+      FIELD_REORDER_MIME,
+      serializeFieldReorder({ kind: "field-reorder", nodeId, fieldId: field.id }),
+    );
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleReorderDragEnd = () => {
+    setIsDragging(false);
+    setIsDropTarget(false);
+    window.setTimeout(() => {
+      dragStartedRef.current = false;
+    }, 0);
+  };
+
+  const handleReorderDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes(FIELD_REORDER_MIME)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setIsDropTarget(true);
+  };
+
+  const handleReorderDragLeave = () => {
+    setIsDropTarget(false);
+  };
+
+  const handleReorderDrop = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes(FIELD_REORDER_MIME)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDropTarget(false);
+    setIsDragging(false);
+    const source = parseFieldReorder(e.dataTransfer.getData(FIELD_REORDER_MIME));
+    if (!source || source.nodeId !== nodeId || source.fieldId === field.id) return;
+    onFieldReorder(source.fieldId, field.id);
+  };
+
+  const rowStateClass = `${isActive ? "is-active" : ""} ${isFaded ? "is-faded" : ""} ${
+    isDragging ? "is-dragging" : ""
+  } ${isDropTarget ? "is-drop-target" : ""}`;
 
   if (variant === "compact") {
     return (
@@ -549,17 +615,30 @@ export function FieldRow({
         title={field.label}
         metadata={field.metadata}
         properties={fieldProperties}
-        className={`system-node__field-list-item relative ${isActive ? "is-active" : ""} ${
-          isFaded ? "is-faded" : ""
-        }`}
+        className={`system-node__field-list-item ${rowStateClass}`}
       >
-      <div
-        className="system-node__field-list-item-inner"
-        onClick={handleClick}
-      >
-        <FieldConnectionAnchors fieldId={field.id} />
-        <span className="system-node__field-name">{field.label}</span>
-      </div>
+        <div
+          className="system-node__field-row-outer"
+          onDragOver={handleReorderDragOver}
+          onDragLeave={handleReorderDragLeave}
+          onDrop={handleReorderDrop}
+        >
+          <div className="system-node__field-handle-col system-node__field-handle-col--left nodrag nopan">
+            <FieldConnectionHandle fieldId={field.id} side="left" type="target" />
+          </div>
+          <div
+            className="system-node__field-list-item-inner"
+            draggable
+            onDragStart={handleReorderDragStart}
+            onDragEnd={handleReorderDragEnd}
+            onClick={handleClick}
+          >
+            <span className="system-node__field-name">{field.label}</span>
+          </div>
+          <div className="system-node__field-handle-col system-node__field-handle-col--right nodrag nopan">
+            <FieldConnectionHandle fieldId={field.id} side="right" type="source" />
+          </div>
+        </div>
       </SmartHoverAttributes>
     );
   }
@@ -569,50 +648,62 @@ export function FieldRow({
       title={field.label}
       metadata={field.metadata}
       properties={fieldProperties}
-      className={`system-node__table-row relative ${isActive ? "is-active" : ""} ${isFaded ? "is-faded" : ""}`}
+      className={`system-node__table-row ${rowStateClass}`}
     >
-    <div
-      className="system-node__table-row-inner"
-      style={tableGridStyle}
-      onClick={handleClick}
-    >
-      <FieldConnectionAnchors fieldId={field.id} />
-      <div className="system-node__table-cell system-node__table-cell--name">
-        <span className="system-node__field-name">{field.label}</span>
-      </div>
-      {tableColumns.map((column) => (
-        <div
-          key={`${field.id}-${column.id}`}
-          className="system-node__table-cell"
-        >
-          {formatFieldCellValue(field.metadata, column.id, fieldProperties)}
+      <div
+        className="system-node__field-row-outer system-node__field-row-outer--table"
+        onDragOver={handleReorderDragOver}
+        onDragLeave={handleReorderDragLeave}
+        onDrop={handleReorderDrop}
+      >
+        <div className="system-node__field-handle-col system-node__field-handle-col--left nodrag nopan">
+          <FieldConnectionHandle fieldId={field.id} side="left" type="target" />
         </div>
-      ))}
-      <div className="system-node__table-cell system-node__table-cell--actions nodrag nopan">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onFieldSelect(nodeId, field.id);
-          }}
-          className="system-node__icon-btn system-node__icon-btn--static"
-          title="Edit in sidebar"
+        <div
+          className="system-node__table-row-inner"
+          style={tableGridStyle}
+          draggable
+          onDragStart={handleReorderDragStart}
+          onDragEnd={handleReorderDragEnd}
+          onClick={handleClick}
         >
-          <Pencil className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDeleteField(nodeId, field.id);
-          }}
-          className="system-node__icon-btn system-node__icon-btn--static"
-          title="Delete field"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+          <div className="system-node__table-cell system-node__table-cell--name">
+            <span className="system-node__field-name">{field.label}</span>
+          </div>
+          {tableColumns.map((column) => (
+            <div key={`${field.id}-${column.id}`} className="system-node__table-cell">
+              {formatFieldCellValue(field.metadata, column.id, fieldProperties)}
+            </div>
+          ))}
+          <div className="system-node__table-cell system-node__table-cell--actions nodrag nopan">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onFieldSelect(nodeId, field.id);
+              }}
+              className="system-node__icon-btn system-node__icon-btn--static"
+              title="Edit in sidebar"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteField(nodeId, field.id);
+              }}
+              className="system-node__icon-btn system-node__icon-btn--static"
+              title="Delete field"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+        <div className="system-node__field-handle-col system-node__field-handle-col--right nodrag nopan">
+          <FieldConnectionHandle fieldId={field.id} side="right" type="source" />
+        </div>
       </div>
-    </div>
     </SmartHoverAttributes>
   );
 }

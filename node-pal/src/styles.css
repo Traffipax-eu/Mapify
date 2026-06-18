@@ -269,6 +269,18 @@
   background: var(--sidebar);
 }
 
+.mapify-sidebar__blocks-list {
+  overflow-x: visible;
+}
+
+.mapify-sidebar__blocks-list .palette-card--block:hover {
+  transform: scale(1.01);
+}
+
+.mapify-sidebar__blocks-list .palette-card--block:active {
+  transform: scale(0.99);
+}
+
 .react-flow__node.node-system,
 .react-flow__node.node-touchpoint {
   /* legacy fallback for default nodes (unused now) */
@@ -695,13 +707,51 @@
   min-width: 10px !important;
   min-height: 10px !important;
   opacity: 0;
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  transform: none !important;
 }
 
-.system-node__field-list-item:hover .flow-handle--field,
+.system-node__field-row-outer:hover .flow-handle--field,
 .system-node__field-list-item.is-active .flow-handle--field,
-.system-node__table-row:hover .flow-handle--field,
 .system-node__table-row.is-active .flow-handle--field {
   opacity: 1;
+}
+
+.system-node__field-row-outer {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) 14px;
+  align-items: stretch;
+  width: calc(100% + 20px);
+  margin-left: -10px;
+  margin-right: -10px;
+}
+
+.system-node__field-row-outer--table {
+  grid-template-columns: 14px minmax(0, 1fr) 14px;
+}
+
+.system-node__field-handle-col {
+  position: relative;
+  display: flex;
+  align-items: center;
+  z-index: 4;
+}
+
+.system-node__field-handle-col--left {
+  justify-content: flex-start;
+  padding-left: 2px;
+}
+
+.system-node__field-handle-col--right {
+  justify-content: flex-end;
+  padding-right: 2px;
+}
+
+.system-node__field-handle-col .flow-handle--field:hover {
+  transform: scale(1.15) !important;
 }
 
 .flow-handle--ghost {
@@ -745,24 +795,13 @@
   transform: translateY(-50%) scale(1.15) !important;
 }
 
-.field-handle--left {
-  left: -6px !important;
-  top: 50% !important;
-  transform: translateY(-50%) !important;
-}
-
+.field-handle--left,
 .field-handle--right {
-  right: -6px !important;
-  top: 50% !important;
-  transform: translateY(-50%) !important;
-}
-
-.field-handle--left:hover {
-  transform: translateY(-50%) scale(1.15) !important;
-}
-
-.field-handle--right:hover {
-  transform: translateY(-50%) scale(1.15) !important;
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  transform: none !important;
 }
 
 .system-node__table-toggle {
@@ -789,38 +828,58 @@
   background: color-mix(in oklch, var(--color-card) 96%, transparent);
 }
 .system-node__field-list-item {
-  display: flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 6px 12px;
+  display: block;
   border-bottom: 1px solid color-mix(in oklch, var(--color-border) 70%, transparent);
-  cursor: pointer;
   transition: background 120ms ease, opacity 250ms ease;
   overflow: visible;
 }
 .system-node__field-list-item:last-child {
   border-bottom: none;
 }
-.system-node__field-list-item:hover {
-  background: color-mix(in oklch, var(--color-accent) 65%, transparent);
+.system-node__field-list-item-inner {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 4px;
+  cursor: grab;
+  border-radius: 4px;
 }
-.system-node__field-list-item:active {
-  cursor: pointer;
+.system-node__field-list-item-inner:active {
+  cursor: grabbing;
+}
+.system-node__field-list-item.is-dragging .system-node__field-list-item-inner {
+  opacity: 0.45;
+}
+.system-node__field-list-item.is-drop-target .system-node__field-list-item-inner {
+  background: color-mix(in oklch, var(--color-primary) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-primary) 25%, transparent);
+}
+.system-node__field-list-item:hover .system-node__field-list-item-inner {
+  background: color-mix(in oklch, var(--color-accent) 65%, transparent);
 }
 .system-node__field-list-item.is-faded {
   opacity: 0.2;
   filter: saturate(0.5);
 }
-.system-node__field-list-item.is-active {
+.system-node__field-list-item.is-active .system-node__field-list-item-inner {
   background: color-mix(in oklch, oklch(0.7 0.22 35) 14%, transparent);
   box-shadow: inset 3px 0 0 oklch(0.7 0.22 35);
 }
 
 .system-node__table-row {
+  display: block;
+}
+.system-node__table-row-inner {
   cursor: grab;
 }
-.system-node__table-row:active {
+.system-node__table-row-inner:active {
   cursor: grabbing;
+}
+.system-node__table-row.is-dragging .system-node__table-row-inner {
+  opacity: 0.45;
+}
+.system-node__table-row.is-drop-target .system-node__table-row-inner {
+  background: color-mix(in oklch, var(--color-primary) 8%, transparent);
 }
 
 .field-drag-ghost {
