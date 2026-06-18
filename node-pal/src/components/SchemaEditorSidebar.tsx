@@ -145,7 +145,7 @@ export function SchemaEditorSidebar({
               <label className="schema-editor-sidebar__label">Accent color</label>
               <input
                 type="color"
-                value={group.color || "#5b8fd9"}
+                value={group.color || "#0067F5"}
                 onChange={(e) => updateGroupColor(e.target.value)}
                 className="schema-editor-sidebar__color"
               />

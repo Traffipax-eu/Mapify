@@ -72,7 +72,7 @@ function edgeToSettings(edge: Edge): ConnectionSettings {
 
   return {
     direction,
-    pathType: data.pathType ?? "step",
+    pathType: data.controlPoints?.length ? "custom" : (data.pathType ?? "step"),
     lineStyle: data.lineStyle ?? "solid",
   };
 }
@@ -243,6 +243,8 @@ export function applyConnectionSettingsToEdge(
     markerEndStyle = "arrowclosed";
   }
 
+  const resetBends = settings.pathType !== "custom";
+
   return {
     ...edge,
     markerStart: buildMarker(markerStartStyle, strokeColor),
@@ -255,10 +257,7 @@ export function applyConnectionSettingsToEdge(
       lineStyle: settings.lineStyle as EdgeLineStyle,
       markerStart: markerStartStyle,
       markerEnd: markerEndStyle,
-      controlPoints:
-        settings.pathType === "custom" || settings.pathType === "bezier"
-          ? edge.data?.controlPoints
-          : undefined,
+      controlPoints: resetBends ? undefined : edge.data?.controlPoints,
     },
   };
 }

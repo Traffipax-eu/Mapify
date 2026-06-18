@@ -15,6 +15,7 @@ import {
   ChevronDown,
   CloudDownload,
   CloudUpload,
+  Code2,
   Download,
   FileImage,
   FileType,
@@ -37,6 +38,7 @@ interface FileMenuProps {
   onImportEncrypted: (file: File) => void;
   onExportJson: () => void;
   onExportEncrypted: () => void;
+  onGenerateEmbed: () => void;
   onVisualExport: (format: "png" | "jpeg" | "pdf") => void;
 }
 
@@ -52,6 +54,7 @@ export function FileMenu({
   onImportEncrypted,
   onExportJson,
   onExportEncrypted,
+  onGenerateEmbed,
   onVisualExport,
 }: FileMenuProps) {
   const jsonInputRef = useRef<HTMLInputElement>(null);
@@ -124,6 +127,10 @@ export function FileMenu({
           <DropdownMenuItem onClick={onExportEncrypted}>
             <Shield className="mr-2 h-4 w-4" />
             Export Encrypted
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onGenerateEmbed}>
+            <Code2 className="mr-2 h-4 w-4" />
+            Embed snippet (encrypted)
           </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger disabled={isVisualExporting}>

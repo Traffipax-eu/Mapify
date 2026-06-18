@@ -3,14 +3,15 @@ import {
   BaseEdge,
   EdgeLabelRenderer,
   getBezierPath,
-  getSmoothStepPath,
   getStraightPath,
+  Position,
   useReactFlow,
   type EdgeProps,
 } from "reactflow";
 import { Plus } from "lucide-react";
 import { buildMarker } from "@/lib/edgeMarkers";
 import {
+  buildAutoStepPath,
   buildWaypointPath,
   getPathMidpoint,
   resolveWaypoints,
@@ -19,8 +20,6 @@ import {
 import type { EdgeData, EdgePathType } from "@/lib/storage";
 
 export type CustomEdgeData = EdgeData;
-
-const SMOOTH_STEP_RADIUS = 16;
 
 function getAutomaticEdgePath(
   pathType: EdgePathType,
@@ -34,23 +33,21 @@ function getAutomaticEdgePath(
   },
 ): [string, number, number] {
   const { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition } = params;
+  const source = { x: sourceX, y: sourceY };
+  const target = { x: targetX, y: targetY };
 
   if (pathType === "straight") {
     const [path, labelX, labelY] = getStraightPath({ sourceX, sourceY, targetX, targetY });
     return [path, labelX, labelY];
   }
 
-  if (pathType === "step") {
-    const [path, labelX, labelY] = getSmoothStepPath({
-      sourceX,
-      sourceY,
-      sourcePosition,
-      targetX,
-      targetY,
-      targetPosition,
-      borderRadius: SMOOTH_STEP_RADIUS,
-    });
-    return [path, labelX, labelY];
+  if (pathType === "step" || pathType === "custom") {
+    return buildAutoStepPath(
+      source,
+      target,
+      sourcePosition ?? Position.Bottom,
+      targetPosition ?? Position.Top,
+    );
   }
 
   const [path, labelX, labelY] = getBezierPath({
@@ -96,8 +93,20 @@ function CustomEdgeImpl({
 
   const [edgePath, labelX, labelY] = useMemo(() => {
     if (hasCustomBends) {
-      const path = buildWaypointPath(source, target, waypoints);
-      const midpoint = getPathMidpoint(source, target, waypoints);
+      const path = buildWaypointPath(
+        source,
+        target,
+        waypoints,
+        sourcePosition ?? Position.Bottom,
+        targetPosition ?? Position.Top,
+      );
+      const midpoint = getPathMidpoint(
+        source,
+        target,
+        waypoints,
+        sourcePosition ?? Position.Bottom,
+        targetPosition ?? Position.Top,
+      );
       return [path, midpoint.x, midpoint.y] as const;
     }
 
@@ -124,7 +133,7 @@ function CustomEdgeImpl({
     targetPosition,
   ]);
 
-  const isLineage = animated || className?.includes("edge-lineage");
+  const isLineage = animated && (className?.includes("edge-lineage") ?? false);
   const strokeColor = isLineage
     ? "oklch(0.72 0.22 35)"
     : data?.rerouted
@@ -133,50 +142,57 @@ function CustomEdgeImpl({
         ? "#2563eb"
         : "#64748b";
 
+  const isDashed = !isLineage && !data?.rerouted && lineStyle === "dashed";
+  const isDragging = draggingIndex !== null;
+
   const edgeStyle = {
     stroke: strokeColor,
     strokeWidth: isLineage ? 3 : selected ? 2.5 : 2,
-    strokeDasharray: isLineage
-      ? "8 5"
-      : data?.rerouted
-        ? "5,5"
-        : lineStyle === "dashed"
-          ? "10 8"
-          : "7 9",
-    animation: isLineage ? "lineage-dash 1s linear infinite" : "edge-flow 1.4s linear infinite",
-    transition: draggingIndex !== null ? "none" : "d 0.18s ease",
+    strokeDasharray: isLineage ? "8 5" : data?.rerouted ? "5 5" : isDashed ? "8 6" : undefined,
+    animation: isLineage ? "lineage-dash 1s linear infinite" : undefined,
+    transition: isDragging ? "none" : "d 0.18s ease",
   };
 
+  const labelAnchorY = labelY - 18;
   const resolvedMarkerStart = markerStart ?? buildMarker(data?.markerStart ?? "none", strokeColor);
   const resolvedMarkerEnd = markerEnd ?? buildMarker(data?.markerEnd ?? "arrowclosed", strokeColor);
   const labelText = data?.label?.trim() ?? "";
 
   const updateWaypoints = useCallback(
-    (nextPoints: FlowPoint[]) => {
+    (nextPoints: FlowPoint[] | ((current: FlowPoint[]) => FlowPoint[])) => {
       setEdges((edges) =>
-        edges.map((edge) =>
-          edge.id === id
-            ? {
-                ...edge,
-                data: {
-                  ...edge.data,
-                  pathType: "custom" as const,
-                  controlPoints: nextPoints,
-                },
-              }
-            : edge,
-        ),
+        edges.map((edge) => {
+          if (edge.id !== id) return edge;
+          const current = resolveWaypoints(edge.data?.controlPoints);
+          const resolved = typeof nextPoints === "function" ? nextPoints(current) : nextPoints;
+          return {
+            ...edge,
+            selected: true,
+            data: {
+              ...edge.data,
+              pathType: "custom" as const,
+              controlPoints: resolved,
+            },
+          };
+        }),
       );
     },
     [id, setEdges],
+  );
+
+  const addWaypointAt = useCallback(
+    (point: FlowPoint) => {
+      updateWaypoints((current) => [...current, point]);
+    },
+    [updateWaypoints],
   );
 
   const addMidWaypoint = useCallback(() => {
     const insertPoint = hasCustomBends
       ? getPathMidpoint(source, target, waypoints)
       : { x: labelX, y: labelY };
-    updateWaypoints([...waypoints, insertPoint]);
-  }, [hasCustomBends, waypoints, source, target, labelX, labelY, updateWaypoints]);
+    addWaypointAt(insertPoint);
+  }, [hasCustomBends, waypoints, source, target, labelX, labelY, addWaypointAt]);
 
   const onWaypointPointerDown = (index: number, event: React.PointerEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -219,6 +235,14 @@ function CustomEdgeImpl({
     window.addEventListener("pointercancel", finishDrag);
   };
 
+  const onEdgeDoubleClick = (event: React.MouseEvent<SVGPathElement>) => {
+    if (isLineage) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const point = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    addWaypointAt(point);
+  };
+
   const showBendControls = selected && !isLineage;
 
   return (
@@ -230,6 +254,7 @@ function CustomEdgeImpl({
         markerEnd={resolvedMarkerEnd}
         interactionWidth={40}
         className={selected ? "custom-edge--selected" : undefined}
+        onDoubleClick={onEdgeDoubleClick}
       />
       {showBendControls && (
         <EdgeLabelRenderer>
@@ -245,6 +270,14 @@ function CustomEdgeImpl({
                 zIndex: 1001,
               }}
               onPointerDown={(event) => onWaypointPointerDown(index, event)}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                event.preventDefault();
+                updateWaypoints((current) =>
+                  current.filter((_, waypointIndex) => waypointIndex !== index),
+                );
+              }}
+              title="Drag bend point · Double-click to remove"
               aria-label={`Adjust connection bend ${index + 1}`}
             />
           ))}
@@ -274,7 +307,7 @@ function CustomEdgeImpl({
           <div
             style={{
               position: "absolute",
-              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              transform: `translate(-50%, -100%) translate(${labelX}px, ${labelAnchorY}px)`,
               pointerEvents: "none",
             }}
             className="edge-label-chip"

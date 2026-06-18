@@ -14,6 +14,10 @@ export type NodeCanvasContextValue = {
     source: { nodeId: string; fieldId: string },
     target: { nodeId: string; fieldId: string },
   ) => void;
+  onFieldToNodeConnectDrop: (
+    source: { nodeId: string; fieldId: string },
+    targetNodeId: string,
+  ) => void;
   onUpdateDrawingNodeData: (
     nodeId: string,
     updater: (data: Record<string, unknown>) => Record<string, unknown>,

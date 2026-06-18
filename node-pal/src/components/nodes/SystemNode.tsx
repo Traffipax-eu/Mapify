@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState, useCallback } from "react";
+import { memo, useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { Position, useUpdateNodeInternals, type NodeProps } from "reactflow";
 import {
   ChevronDown,
@@ -26,6 +26,12 @@ import {
 } from "@/lib/nodeSections";
 import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
+import { BRAND } from "@/lib/brand";
+import {
+  FIELD_CONNECTION_MIME,
+  parseFieldConnectionDrag,
+  serializeFieldConnectionDrag,
+} from "@/lib/fieldConnectionDnD";
 import {
   FIELD_REORDER_MIME,
   parseFieldReorder,
@@ -62,7 +68,7 @@ export type SystemNodeData = {
 
 function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeData>) {
   const data: SystemNodeData = rawData ?? { label: "System" };
-  const { schema, onUpdateNodeData, onDeleteNode, onFieldSelect, onDeleteField } =
+  const { schema, onUpdateNodeData, onDeleteNode, onFieldSelect, onDeleteField, onFieldConnectDrop } =
     useNodeCanvas();
   const updateNodeInternals = useUpdateNodeInternals();
   const { hasLineage, lineageNodeIds, activeFieldIdsByNode, impactNodeIds, anchorNodeId, highlightedNodeIds } =
@@ -81,9 +87,37 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const hasImpact = impactNodeIds.has(id);
   const fieldLineageActive = hasLineage;
   const activeFieldIds = activeFieldIdsByNode.get(id) ?? new Set<string>();
-  const tableColumns = getFieldTableColumns(schema, data.nodeGroupId, data.visibleColumns);
-  const nodeGroupProperties = getNodeGroupProperties(schema);
   const fieldProperties = getFieldProperties(schema, data.nodeGroupId);
+  const tableColumns = useMemo(() => {
+    const schemaColumns = getFieldTableColumns(schema, data.nodeGroupId, data.visibleColumns);
+    if (schemaColumns.length > 0) return schemaColumns;
+
+    const keys = new Set<string>();
+    for (const field of fields) {
+      for (const [key, value] of Object.entries(field.metadata ?? {})) {
+        if (value !== undefined && value !== null && value !== "") {
+          keys.add(key);
+        }
+      }
+    }
+
+    return Array.from(keys)
+      .sort()
+      .map((key) => ({
+        id: key,
+        name: fieldProperties.find((property) => property.id === key)?.name ?? key,
+        scope: "group" as const,
+      }));
+  }, [schema, data.nodeGroupId, data.visibleColumns, fields, fieldProperties]);
+
+  const fullTableGridStyle = useMemo(
+    () => ({
+      gridTemplateColumns: `14px minmax(100px, 1.2fr) ${tableColumns.map(() => "minmax(80px, 1fr)").join(" ")} 52px 14px`,
+    }),
+    [tableColumns],
+  );
+
+  const nodeGroupProperties = getNodeGroupProperties(schema);
 
   const [showSettings, setShowSettings] = useState(false);
   const [newField, setNewField] = useState("");
@@ -95,11 +129,13 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     requestAnimationFrame(() => updateNodeInternals(id));
   }, [id, updateNodeInternals]);
 
-  const accentColor =
-    data.color ||
-    schema?.nodeGroups?.find((group) => group?.id === data.nodeGroupId)?.color ||
-    "#0067F5";
+  const accentColor = data.color || schema?.nodeGroups?.find((group) => group?.id === data.nodeGroupId)?.color || BRAND.blue;
   const HeaderIcon = getNodeIcon(data.icon);
+  const fieldSignature = useMemo(() => fields.map((field) => field.id).join(","), [fields]);
+
+  useEffect(() => {
+    refreshNodeLayout();
+  }, [fieldSignature, tableExpanded, collapsed, refreshNodeLayout]);
 
   const update = (updater: (d: SystemNodeData) => SystemNodeData) => {
     onUpdateNodeData(id, updater);
@@ -213,15 +249,17 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     refreshNodeLayout();
   };
 
-  const tableGridStyle = {
-    gridTemplateColumns: `minmax(100px, 1.2fr) ${tableColumns.map(() => "minmax(72px, 1fr)").join(" ")} 52px`,
-  };
-
   const renderFieldList = (sectionFields: Field[]) => (
     <div className={tableExpanded ? "system-node__table" : "system-node__field-list"}>
       {tableExpanded && (
-        <div className="system-node__table-header" style={tableGridStyle}>
-          <div className="system-node__table-cell system-node__table-cell--name">Field</div>
+        <div
+          className="system-node__field-row-outer system-node__field-row-outer--table system-node__table-header-row"
+          style={fullTableGridStyle}
+        >
+          <div className="system-node__field-handle-col system-node__field-handle-col--spacer" aria-hidden />
+          <div className="system-node__table-cell system-node__table-cell--name system-node__table-cell--header">
+            Field
+          </div>
           {tableColumns.map((column) => (
             <div
               key={column.id}
@@ -231,8 +269,15 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
               {column.name}
             </div>
           ))}
-          <div className="system-node__table-cell system-node__table-cell--actions" />
+          <div className="system-node__table-cell system-node__table-cell--actions system-node__table-cell--header" />
+          <div className="system-node__field-handle-col system-node__field-handle-col--spacer" aria-hidden />
         </div>
+      )}
+
+      {tableExpanded && tableColumns.length === 0 && sectionFields.length > 0 && (
+        <p className="system-node__table-empty-hint nodrag nopan">
+          Add field attributes in the schema editor to show columns here.
+        </p>
       )}
 
       {sectionFields.map((field) => (
@@ -241,7 +286,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           nodeId={id}
           field={field}
           variant={tableExpanded ? "expanded" : "compact"}
-          tableGridStyle={tableGridStyle}
+          fullTableGridStyle={fullTableGridStyle}
           tableColumns={tableColumns}
           fieldProperties={fieldProperties}
           isActive={activeFieldIds.has(field.id)}
@@ -249,6 +294,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           onFieldSelect={onFieldSelect}
           onDeleteField={onDeleteField}
           onFieldReorder={reorderFields}
+          onFieldConnectDrop={onFieldConnectDrop}
         />
       ))}
     </div>
@@ -258,7 +304,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     <div
       className={`system-node ${selected ? "system-node--selected" : ""} ${
         collapsed ? "system-node--collapsed" : ""
-      } ${faded ? "system-node--faded" : ""} ${inLineage ? "system-node--lineage" : ""} ${
+      } ${tableExpanded ? "system-node--table-expanded" : ""} ${faded ? "system-node--faded" : ""} ${inLineage ? "system-node--lineage" : ""} ${
         isHighlighted ? "system-node--highlighted" : ""
       } ${isAnchor ? "system-node--anchor" : ""} ${hasImpact ? "system-node--impact" : ""}`}
     >
@@ -306,84 +352,89 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
         </div>
       )}
 
-      <SmartHoverAttributes
-        title={data.label ?? "System"}
-        metadata={data.metadata}
-        properties={nodeGroupProperties}
-        className={`system-node__header system-node__header--pro ${collapsed ? "system-node__header--collapsed" : ""}`}
-        style={{ ["--block-accent" as string]: accentColor } as React.CSSProperties}
-      >
-        <div className="system-node__accent rounded-t-2xl" aria-hidden />
-        <PlusHandle
-          type="target"
-          position={Position.Left}
-          id={`parent-target-${id}`}
-          variant="parent"
-          className="system-node__parent-handle system-node__parent-handle--target"
-        />
-        <PlusHandle
-          type="source"
-          position={Position.Right}
-          id={`parent-source-${id}`}
-          variant="parent"
-          className="system-node__parent-handle system-node__parent-handle--source"
-        />
+      <PlusHandle
+        type="target"
+        position={Position.Left}
+        id={`parent-target-${id}`}
+        variant="parent"
+        className="system-node__parent-handle system-node__parent-handle--target"
+      />
+      <PlusHandle
+        type="source"
+        position={Position.Right}
+        id={`parent-source-${id}`}
+        variant="parent"
+        className="system-node__parent-handle system-node__parent-handle--source"
+      />
 
-        <button
-          type="button"
-          onClick={toggleCollapse}
-          className="system-node__chevron nodrag nopan"
-          title={collapsed ? "Expand" : "Collapse"}
+      <div className="system-node__surface flex flex-col overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-sm">
+        <SmartHoverAttributes
+          title={data.label ?? "System"}
+          metadata={data.metadata}
+          properties={nodeGroupProperties}
+          className={`system-node__header system-node__header--colored flex w-full items-center justify-between gap-2 px-4 py-3 text-white ${
+            collapsed ? "system-node__header--collapsed" : ""
+          }`}
+          style={{ backgroundColor: accentColor }}
         >
-          {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        </button>
-        <span className="system-node__header-icon nodrag nopan" style={{ color: accentColor }}>
-          <HeaderIcon className="h-4 w-4" />
-        </span>
-        <div className="system-node__header-content">
-          <span className="system-node__title">{data.label ?? "System"}</span>
-          {collapsed && fields.length > 0 && <span className="system-node__count">{fields.length}</span>}
-        </div>
-        <button
-          type="button"
-          onPointerDown={stopPointer}
-          onClick={toggleTableExpanded}
-          className="system-node__table-toggle nodrag nopan"
-          title={tableExpanded ? "Collapse field table" : "Expand field table"}
-        >
-          {tableExpanded ? <Minus className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-        </button>
-        <button
-          type="button"
-          onPointerDown={stopPointer}
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowSettings((value) => !value);
-          }}
-          className="system-node__settings-btn nodrag nopan"
-          title="Node settings"
-        >
-          <Settings className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          onPointerDown={stopPointer}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDeleteNode(id);
-          }}
-          className="system-node__delete-btn nodrag nopan"
-          title="Delete node"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </SmartHoverAttributes>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleCollapse}
+              className="system-node__chevron nodrag nopan"
+              title={collapsed ? "Expand" : "Collapse"}
+            >
+              {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+            <span className="system-node__header-icon nodrag nopan">
+              <HeaderIcon className="h-4 w-4" />
+            </span>
+            <div className="system-node__header-content">
+              <span className="system-node__title">{data.label ?? "System"}</span>
+              {collapsed && fields.length > 0 && <span className="system-node__count">{fields.length}</span>}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              onPointerDown={stopPointer}
+              onClick={toggleTableExpanded}
+              className="system-node__table-toggle nodrag nopan"
+              title={tableExpanded ? "Collapse field table" : "Expand field table"}
+            >
+              {tableExpanded ? <Minus className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+            </button>
+            <button
+              type="button"
+              onPointerDown={stopPointer}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowSettings((value) => !value);
+              }}
+              className="system-node__settings-btn nodrag nopan"
+              title="Node settings"
+            >
+              <Settings className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onPointerDown={stopPointer}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteNode(id);
+              }}
+              className="system-node__delete-btn nodrag nopan"
+              title="Delete node"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </SmartHoverAttributes>
 
-      {!collapsed && (
-        <div
-          className={`system-node__body nodrag nopan nowheel ${fields.length === 0 ? "system-node__body--empty" : ""}`}
-          onPointerDown={stopPointer}
-        >
+        {!collapsed && (
+          <div
+            className={`system-node__body nodrag nopan flex flex-col gap-1 overflow-visible pb-2 ${fields.length === 0 ? "system-node__body--empty" : ""}`}
+          >
           <div className="system-node__sections">
             {renderableSections.map((section) => {
               const sectionFields = getFieldsForSection(fields, section.id);
@@ -502,6 +553,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -510,7 +562,7 @@ type FieldRowProps = {
   nodeId: string;
   field: Field;
   variant: "compact" | "expanded";
-  tableGridStyle: React.CSSProperties;
+  fullTableGridStyle: React.CSSProperties;
   tableColumns: ReturnType<typeof getFieldTableColumns>;
   fieldProperties: ReturnType<typeof getFieldProperties>;
   isActive: boolean;
@@ -518,6 +570,10 @@ type FieldRowProps = {
   onFieldSelect: (nodeId: string, fieldId: string) => void;
   onDeleteField: (nodeId: string, fieldId: string) => void;
   onFieldReorder: (sourceFieldId: string, targetFieldId: string) => void;
+  onFieldConnectDrop: (
+    source: { nodeId: string; fieldId: string },
+    target: { nodeId: string; fieldId: string },
+  ) => void;
 };
 
 function FieldConnectionHandle({
@@ -531,13 +587,16 @@ function FieldConnectionHandle({
   side: "left" | "right";
   type: "source" | "target";
 }) {
+  const handleId =
+    type === "source" ? `field-src-${nodeId}-${fieldId}` : `field-tgt-${nodeId}-${fieldId}`;
+
   return (
     <PlusHandle
       type={type}
       position={side === "left" ? Position.Left : Position.Right}
-      id={`${type}-${nodeId}-${fieldId}`}
+      id={handleId}
       variant="field"
-      className={`field-handle field-handle--${side}`}
+      className={`field-handle field-handle--${side} opacity-0`}
     />
   );
 }
@@ -546,7 +605,7 @@ export function FieldRow({
   nodeId,
   field,
   variant,
-  tableGridStyle,
+  fullTableGridStyle,
   tableColumns,
   fieldProperties,
   isActive,
@@ -554,8 +613,10 @@ export function FieldRow({
   onFieldSelect,
   onDeleteField,
   onFieldReorder,
+  onFieldConnectDrop,
 }: FieldRowProps) {
   const [isDropTarget, setIsDropTarget] = useState(false);
+  const [isConnectTarget, setIsConnectTarget] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const dragStartedRef = useRef(false);
 
@@ -565,51 +626,95 @@ export function FieldRow({
     onFieldSelect(nodeId, field.id);
   };
 
-  const handleReorderDragStart = (e: React.DragEvent) => {
+  const handleDragStart = (e: React.DragEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest(".react-flow__handle")) {
+      e.preventDefault();
+      return;
+    }
     e.stopPropagation();
     dragStartedRef.current = true;
     setIsDragging(true);
-    e.dataTransfer.setData(
-      FIELD_REORDER_MIME,
-      serializeFieldReorder({ kind: "field-reorder", nodeId, fieldId: field.id }),
-    );
-    e.dataTransfer.effectAllowed = "move";
+
+    if (e.altKey) {
+      e.dataTransfer.setData(
+        FIELD_REORDER_MIME,
+        serializeFieldReorder({ kind: "field-reorder", nodeId, fieldId: field.id }),
+      );
+      e.dataTransfer.effectAllowed = "move";
+    } else {
+      e.dataTransfer.setData(
+        FIELD_CONNECTION_MIME,
+        serializeFieldConnectionDrag({
+          kind: "field-connection",
+          sourceNodeId: nodeId,
+          sourceFieldId: field.id,
+        }),
+      );
+      e.dataTransfer.effectAllowed = "copy";
+    }
   };
 
-  const handleReorderDragEnd = () => {
+  const handleDragEnd = () => {
     setIsDragging(false);
     setIsDropTarget(false);
+    setIsConnectTarget(false);
     window.setTimeout(() => {
       dragStartedRef.current = false;
     }, 0);
   };
 
-  const handleReorderDragOver = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes(FIELD_REORDER_MIME)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = "move";
-    setIsDropTarget(true);
+  const handleDragOver = (e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes(FIELD_CONNECTION_MIME)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "copy";
+      setIsConnectTarget(true);
+      setIsDropTarget(false);
+      return;
+    }
+    if (e.dataTransfer.types.includes(FIELD_REORDER_MIME)) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      setIsDropTarget(true);
+      setIsConnectTarget(false);
+    }
   };
 
-  const handleReorderDragLeave = () => {
+  const handleDragLeave = () => {
     setIsDropTarget(false);
+    setIsConnectTarget(false);
   };
 
-  const handleReorderDrop = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes(FIELD_REORDER_MIME)) return;
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDropTarget(false);
+    setIsConnectTarget(false);
     setIsDragging(false);
-    const source = parseFieldReorder(e.dataTransfer.getData(FIELD_REORDER_MIME));
-    if (!source || source.nodeId !== nodeId || source.fieldId === field.id) return;
-    onFieldReorder(source.fieldId, field.id);
+
+    if (e.dataTransfer.types.includes(FIELD_CONNECTION_MIME)) {
+      const source = parseFieldConnectionDrag(e.dataTransfer.getData(FIELD_CONNECTION_MIME));
+      if (!source) return;
+      if (source.sourceNodeId === nodeId && source.sourceFieldId === field.id) return;
+      onFieldConnectDrop(
+        { nodeId: source.sourceNodeId, fieldId: source.sourceFieldId },
+        { nodeId, fieldId: field.id },
+      );
+      return;
+    }
+
+    if (e.dataTransfer.types.includes(FIELD_REORDER_MIME)) {
+      const source = parseFieldReorder(e.dataTransfer.getData(FIELD_REORDER_MIME));
+      if (!source || source.nodeId !== nodeId || source.fieldId === field.id) return;
+      onFieldReorder(source.fieldId, field.id);
+    }
   };
 
   const rowStateClass = `${isActive ? "is-active" : ""} ${isFaded ? "is-faded" : ""} ${
     isDragging ? "is-dragging" : ""
-  } ${isDropTarget ? "is-drop-target" : ""}`;
+  } ${isDropTarget ? "is-drop-target" : ""} ${isConnectTarget ? "is-connect-target" : ""}`;
 
   if (variant === "compact") {
     return (
@@ -617,27 +722,29 @@ export function FieldRow({
         title={field.label}
         metadata={field.metadata}
         properties={fieldProperties}
-        className={`system-node__field-list-item ${rowStateClass}`}
+        className={`system-node__field-list-item nodrag nopan ${rowStateClass}`}
       >
         <div
-          className="system-node__field-row-outer"
-          onDragOver={handleReorderDragOver}
-          onDragLeave={handleReorderDragLeave}
-          onDrop={handleReorderDrop}
+          className="system-node__field-row-outer nodrag nopan"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
         >
-          <div className="system-node__field-handle-col system-node__field-handle-col--left nodrag nopan">
+          <div className="system-node__field-handle-col system-node__field-handle-col--left nodrag nopan pointer-events-auto">
             <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="left" type="target" />
           </div>
           <div
-            className="system-node__field-list-item-inner"
+            className="system-node__field-list-item-inner nodrag nopan"
             draggable
-            onDragStart={handleReorderDragStart}
-            onDragEnd={handleReorderDragEnd}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
             onClick={handleClick}
           >
             <span className="system-node__field-name">{field.label}</span>
           </div>
-          <div className="system-node__field-handle-col system-node__field-handle-col--right nodrag nopan">
+          <div className="system-node__field-handle-col system-node__field-handle-col--right nodrag nopan pointer-events-auto">
             <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="right" type="source" />
           </div>
         </div>
@@ -650,59 +757,57 @@ export function FieldRow({
       title={field.label}
       metadata={field.metadata}
       properties={fieldProperties}
-      className={`system-node__table-row ${rowStateClass}`}
+      className={`system-node__table-row nodrag nopan ${rowStateClass}`}
     >
       <div
-        className="system-node__field-row-outer system-node__field-row-outer--table"
-        onDragOver={handleReorderDragOver}
-        onDragLeave={handleReorderDragLeave}
-        onDrop={handleReorderDrop}
+        className="system-node__field-row-outer system-node__field-row-outer--table nodrag nopan"
+        style={fullTableGridStyle}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        draggable
+        onPointerDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onClick={handleClick}
       >
-        <div className="system-node__field-handle-col system-node__field-handle-col--left nodrag nopan">
+        <div className="system-node__field-handle-col system-node__field-handle-col--left nodrag nopan pointer-events-auto">
           <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="left" type="target" />
         </div>
-        <div
-          className="system-node__table-row-inner"
-          style={tableGridStyle}
-          draggable
-          onDragStart={handleReorderDragStart}
-          onDragEnd={handleReorderDragEnd}
-          onClick={handleClick}
-        >
-          <div className="system-node__table-cell system-node__table-cell--name">
-            <span className="system-node__field-name">{field.label}</span>
-          </div>
-          {tableColumns.map((column) => (
-            <div key={`${field.id}-${column.id}`} className="system-node__table-cell">
-              {formatFieldCellValue(field.metadata, column.id, fieldProperties)}
-            </div>
-          ))}
-          <div className="system-node__table-cell system-node__table-cell--actions nodrag nopan">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onFieldSelect(nodeId, field.id);
-              }}
-              className="system-node__icon-btn system-node__icon-btn--static"
-              title="Edit in sidebar"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteField(nodeId, field.id);
-              }}
-              className="system-node__icon-btn system-node__icon-btn--static"
-              title="Delete field"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
+        <div className="system-node__table-cell system-node__table-cell--name">
+          <span className="system-node__field-name">{field.label}</span>
         </div>
-        <div className="system-node__field-handle-col system-node__field-handle-col--right nodrag nopan">
+        {tableColumns.map((column) => (
+          <div key={`${field.id}-${column.id}`} className="system-node__table-cell">
+            {formatFieldCellValue(field.metadata, column.id, fieldProperties)}
+          </div>
+        ))}
+        <div className="system-node__table-cell system-node__table-cell--actions nodrag nopan">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onFieldSelect(nodeId, field.id);
+            }}
+            className="system-node__icon-btn system-node__icon-btn--static"
+            title="Edit in sidebar"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeleteField(nodeId, field.id);
+            }}
+            className="system-node__icon-btn system-node__icon-btn--static"
+            title="Delete field"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="system-node__field-handle-col system-node__field-handle-col--right nodrag nopan pointer-events-auto">
           <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="right" type="source" />
         </div>
       </div>

@@ -43,6 +43,7 @@ import { EncryptionModal, type EncryptionModalMode } from "./EncryptionModal";
 import { FileMenu } from "./FileMenu";
 import { WorkspaceBar } from "./WorkspaceBar";
 import { CloudSnapshotsDialog } from "./CloudSnapshotsDialog";
+import { EmbedSnippetDialog } from "./EmbedSnippetDialog";
 import { NodeNameDialog } from "./NodeNameDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,6 +65,7 @@ import { decryptData, prepareEncryptedCloudPayload } from "@/utils/encryption";
 import { LineageProvider, type LineageContextValue } from "@/contexts/LineageContext";
 import { NodeCanvasProvider, type NodeCanvasContextValue } from "@/contexts/NodeCanvasContext";
 import { buildMarker } from "@/lib/edgeMarkers";
+import { computeLineage, decorateEdgesForDisplay } from "@/lib/lineageTraversal";
 import { sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
 import { resolveSidebarSelection } from "@/lib/sidebarSelection";
 import { normalizeSchema } from "@/lib/schemaProperties";
@@ -83,7 +85,8 @@ import {
   sortNodesParentFirst,
 } from "@/lib/containerUtils";
 import { DEFAULT_CONNECTION_SETTINGS, type ConnectionSettings } from "@/lib/connectionSettings";
-import { normalizeConnection, parseFieldSourceId, parseFieldTargetId, fieldSourceHandle, fieldTargetHandle, type NormalizedConnection } from "@/lib/connectionUtils";
+import { BRAND } from "@/lib/brand";
+import { normalizeConnection, parseFieldSourceId, parseFieldTargetId, fieldSourceHandle, fieldTargetHandle, parentTargetHandle, isFieldConnectionHandle, type NormalizedConnection } from "@/lib/connectionUtils";
 import {
   cloneNodesForClipboard,
   duplicateNodesFromClipboard,
@@ -195,6 +198,7 @@ function InnerCanvas() {
   const [pendingEncryptedContent, setPendingEncryptedContent] = useState<string | null>(null);
   const [isEncrypting, setIsEncrypting] = useState(false);
   const [cloudSnapshotsOpen, setCloudSnapshotsOpen] = useState(false);
+  const [embedSnippetOpen, setEmbedSnippetOpen] = useState(false);
   const [nodeNameDialogOpen, setNodeNameDialogOpen] = useState(false);
   const [customObjectDialogOpen, setCustomObjectDialogOpen] = useState(false);
   const [pendingCustomObjectPosition, setPendingCustomObjectPosition] = useState<{ x: number; y: number } | null>(
@@ -489,6 +493,38 @@ function InnerCanvas() {
     [createEdgeFromConnection],
   );
 
+  const handleFieldToNodeConnectDrop = useCallback(
+    (source: { nodeId: string; fieldId: string }, targetNodeId: string) => {
+      if (source.nodeId === targetNodeId) return;
+
+      createEdgeFromConnection({
+        sourceNodeId: source.nodeId,
+        targetNodeId,
+        sourceHandle: fieldSourceHandle(source.nodeId, source.fieldId),
+        targetHandle: parentTargetHandle(targetNodeId),
+        sourceFieldId: source.fieldId,
+        targetFieldId: null,
+        isFieldToField: false,
+        isParentToParent: false,
+      });
+    },
+    [createEdgeFromConnection],
+  );
+
+  const isValidConnection = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target) return false;
+      if (connection.source === connection.target) return false;
+      const sourceHandle = connection.sourceHandle ?? "";
+      const targetHandle = connection.targetHandle ?? "";
+      if (isFieldConnectionHandle(sourceHandle) || isFieldConnectionHandle(targetHandle)) {
+        return true;
+      }
+      return true;
+    },
+    [],
+  );
+
   const onConnect = useCallback(
     (params: Connection) => {
       const conn = normalizeConnection(params);
@@ -676,7 +712,7 @@ function InnerCanvas() {
           label: name,
           nodeGroupId: item.id,
           icon: item.icon || "database",
-          color: item.color,
+          color: item.color || BRAND.blue,
           fields: [],
           collapsed: false,
           metadata: {},
@@ -746,186 +782,62 @@ function InnerCanvas() {
     return rerouted;
   }, [edges, nodes]);
 
-  const getEdgeSourceFieldId = (edge: Edge) =>
-    edge.data?.sourceFieldId ??
-    (edge.sourceHandle ? parseFieldSourceId(edge.sourceHandle) : null);
+  const lineage = useMemo(
+    () => computeLineage(lineageAnchor, nodes, edges),
+    [lineageAnchor, edges, nodes],
+  );
 
-  const getEdgeTargetFieldId = (edge: Edge) =>
-    edge.data?.targetFieldId ??
-    (edge.targetHandle ? parseFieldTargetId(edge.targetHandle) : null);
+  const hasLineage = lineageAnchor !== null || selectedEdgeId !== null;
 
-  // Lineage traversal from single-click selection on a system node or field row
-  const lineage = useMemo(() => {
-    const empty = {
-      nodeIds: new Set<string>(),
-      edgeIds: new Set<string>(),
-      fieldIdsByNode: new Map<string, Set<string>>(),
-    };
+  const edgeHighlightNodeIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!selectedEdgeId) return ids;
+    const edge = edges.find((item) => item.id === selectedEdgeId);
+    if (!edge) return ids;
+    ids.add(edge.source);
+    ids.add(edge.target);
+    return ids;
+  }, [selectedEdgeId, edges]);
 
-    if (!lineageAnchor) return empty;
-
-    const { nodeId: anchorNodeId, fieldId: anchorFieldId } = lineageAnchor;
-
-    const runFieldLineage = (seeds: { nodeId: string; fieldId: string }[]) => {
-      const nodeIds = new Set<string>();
-      const edgeIds = new Set<string>();
-      const fieldIdsByNode = new Map<string, Set<string>>();
-      const queue = [...seeds];
-      const visited = new Set(seeds.map(({ nodeId, fieldId }) => `${nodeId}:${fieldId}`));
-
-      const addField = (nodeId: string, fieldId: string) => {
-        if (!fieldIdsByNode.has(nodeId)) fieldIdsByNode.set(nodeId, new Set());
-        fieldIdsByNode.get(nodeId)!.add(fieldId);
-        nodeIds.add(nodeId);
-      };
-
-      for (const seed of seeds) {
-        addField(seed.nodeId, seed.fieldId);
-      }
-
-      while (queue.length) {
-        const { nodeId, fieldId } = queue.shift()!;
-
-        for (const edge of edges) {
-          const edgeTargetFieldId = getEdgeTargetFieldId(edge);
-          if (edge.target === nodeId && edgeTargetFieldId === fieldId) {
-            edgeIds.add(edge.id);
-            const upstreamFieldId = getEdgeSourceFieldId(edge);
-            if (upstreamFieldId && edge.source) {
-              const key = `${edge.source}:${upstreamFieldId}`;
-              if (!visited.has(key)) {
-                visited.add(key);
-                addField(edge.source, upstreamFieldId);
-                queue.push({ nodeId: edge.source, fieldId: upstreamFieldId });
-              }
-            }
-          }
-        }
-
-        for (const edge of edges) {
-          const edgeSourceFieldId = getEdgeSourceFieldId(edge);
-          if (edge.source === nodeId && edgeSourceFieldId === fieldId) {
-            edgeIds.add(edge.id);
-            const downstreamFieldId = getEdgeTargetFieldId(edge);
-            if (downstreamFieldId && edge.target) {
-              const key = `${edge.target}:${downstreamFieldId}`;
-              if (!visited.has(key)) {
-                visited.add(key);
-                addField(edge.target, downstreamFieldId);
-                queue.push({ nodeId: edge.target, fieldId: downstreamFieldId });
-              }
-            }
-          }
-        }
-      }
-
-      return { nodeIds, edgeIds, fieldIdsByNode };
-    };
-
-    if (anchorFieldId) {
-      return runFieldLineage([{ nodeId: anchorNodeId, fieldId: anchorFieldId }]);
-    }
-
-    const anchorNode = nodes.find((item) => item.id === anchorNodeId);
-    const nodeFields = (anchorNode?.data as SystemNodeData | undefined)?.fields ?? [];
-    const connectedSeeds = nodeFields
-      .filter((field) =>
-        edges.some(
-          (edge) =>
-            (edge.source === anchorNodeId && getEdgeSourceFieldId(edge) === field.id) ||
-            (edge.target === anchorNodeId && getEdgeTargetFieldId(edge) === field.id),
-        ),
-      )
-      .map((field) => ({ nodeId: anchorNodeId, fieldId: field.id }));
-
-    if (connectedSeeds.length > 0) {
-      return runFieldLineage(connectedSeeds);
-    }
-
-    const nodeIds = new Set<string>([anchorNodeId]);
-    const edgeIds = new Set<string>();
-    const queue = [anchorNodeId];
-    const visited = new Set<string>([anchorNodeId]);
-
-    while (queue.length) {
-      const current = queue.shift()!;
-
-      for (const edge of edges) {
-        const isParentEdge =
-          !getEdgeSourceFieldId(edge) &&
-          !getEdgeTargetFieldId(edge) &&
-          edge.sourceHandle?.startsWith("parent-") &&
-          edge.targetHandle?.startsWith("parent-");
-
-        if (!isParentEdge) continue;
-
-        if (edge.target === current) {
-          edgeIds.add(edge.id);
-          if (!visited.has(edge.source)) {
-            visited.add(edge.source);
-            nodeIds.add(edge.source);
-            queue.push(edge.source);
-          }
-        }
-        if (edge.source === current) {
-          edgeIds.add(edge.id);
-          if (!visited.has(edge.target)) {
-            visited.add(edge.target);
-            nodeIds.add(edge.target);
-            queue.push(edge.target);
-          }
-        }
-      }
-    }
-
-    return { nodeIds, edgeIds, fieldIdsByNode: new Map<string, Set<string>>() };
-  }, [lineageAnchor, edges, nodes]);
-
-  const hasLineage = lineageAnchor !== null;
+  const activeLineageNodeIds = useMemo(() => {
+    const ids = new Set(lineage.nodeIds);
+    for (const nodeId of edgeHighlightNodeIds) ids.add(nodeId);
+    return ids;
+  }, [lineage.nodeIds, edgeHighlightNodeIds]);
 
   const systemLineageNodeIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const nodeId of lineage.nodeIds) {
+    for (const nodeId of activeLineageNodeIds) {
       const node = nodes.find((item) => item.id === nodeId);
       if (node?.type === "system" || node?.type === "customObject") {
         ids.add(nodeId);
       }
     }
     return ids;
-  }, [lineage.nodeIds, nodes]);
+  }, [activeLineageNodeIds, nodes]);
 
   const lineageContextValue = useMemo<LineageContextValue>(
     () => ({
       hasLineage,
-      lineageNodeIds: lineage.nodeIds,
+      lineageNodeIds: activeLineageNodeIds,
       activeFieldIdsByNode: lineage.fieldIdsByNode,
       impactNodeIds,
       anchorNodeId: lineageAnchor?.nodeId ?? null,
       highlightedNodeIds: systemLineageNodeIds,
     }),
-    [hasLineage, lineage, impactNodeIds, lineageAnchor, systemLineageNodeIds],
+    [hasLineage, activeLineageNodeIds, lineage, impactNodeIds, lineageAnchor, systemLineageNodeIds],
   );
 
   const displayedEdges = useMemo(
     () =>
-      reroutedEdges.map((e) => {
-        const inLineage = lineage.edgeIds.has(e.id);
-        const faded = hasLineage && !inLineage;
-        const strokeColor = inLineage ? "oklch(0.72 0.22 35)" : "#3b82f6";
-        const markerStartStyle = e.data?.markerStart ?? "none";
-        const markerEndStyle = e.data?.markerEnd ?? "arrowclosed";
-
-        return {
-          ...e,
-          hidden: collapsedSystemIds.has(e.source) || collapsedSystemIds.has(e.target),
-          animated: inLineage,
-          zIndex: inLineage ? 2 : 0,
-          markerStart: e.markerStart ?? buildMarker(markerStartStyle, strokeColor),
-          markerEnd: e.markerEnd ?? buildMarker(markerEndStyle, strokeColor),
-          className: `${inLineage ? "edge-lineage" : ""} ${faded ? "edge-faded" : ""}`.trim(),
-        };
+      decorateEdgesForDisplay(reroutedEdges, {
+        lineageEdgeIds: lineage.edgeIds,
+        hasLineage,
+        selectedEdgeId,
+        hiddenNodeIds: collapsedSystemIds,
+        defaultStrokeColor: "#3b82f6",
       }),
-    [reroutedEdges, collapsedSystemIds, lineage, hasLineage],
+    [reroutedEdges, collapsedSystemIds, lineage, hasLineage, selectedEdgeId],
   );
 
   const handleFieldSelect = useCallback(
@@ -1314,6 +1226,7 @@ function InnerCanvas() {
       onFieldSelect: handleFieldSelect,
       onDeleteField: handleDeleteField,
       onFieldConnectDrop: handleFieldConnectDrop,
+      onFieldToNodeConnectDrop: handleFieldToNodeConnectDrop,
       onUpdateDrawingNodeData: handleUpdateDrawingNodeData,
     }),
     [
@@ -1324,6 +1237,7 @@ function InnerCanvas() {
       handleFieldSelect,
       handleDeleteField,
       handleFieldConnectDrop,
+      handleFieldToNodeConnectDrop,
       handleUpdateDrawingNodeData,
     ],
   );
@@ -1869,6 +1783,7 @@ function InnerCanvas() {
             onImportEncrypted={handleImportEncryptedFile}
             onExportJson={handleExport}
             onExportEncrypted={() => openEncryptModal("export")}
+            onGenerateEmbed={() => setEmbedSnippetOpen(true)}
             onVisualExport={handleVisualExport}
           />
         </div>
@@ -1921,7 +1836,7 @@ function InnerCanvas() {
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 onConnectEnd={onConnectEnd}
-                isValidConnection={() => true}
+                isValidConnection={isValidConnection}
                 onNodesDelete={onNodesDelete}
                 onEdgesDelete={onEdgesDelete}
                 onInit={setRfInstance}
@@ -1934,7 +1849,7 @@ function InnerCanvas() {
                 onEdgeDoubleClick={onEdgeDoubleClick}
                 onPaneClick={onPaneClick}
                 connectionMode={ConnectionMode.Loose}
-                connectionRadius={28}
+                connectionRadius={36}
                 defaultEdgeOptions={{
                   type: "custom",
                   markerEnd: {
@@ -2039,6 +1954,12 @@ function InnerCanvas() {
           if (!open) setPendingCustomObjectPosition(null);
         }}
         onConfirm={handleCustomObjectConfirm}
+      />
+
+      <EmbedSnippetDialog
+        open={embedSnippetOpen}
+        onOpenChange={setEmbedSnippetOpen}
+        getPayload={buildExportPayload}
       />
 
       <EncryptionModal
