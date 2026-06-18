@@ -313,18 +313,18 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
         className={`system-node__header system-node__header--pro ${collapsed ? "system-node__header--collapsed" : ""}`}
         style={{ ["--block-accent" as string]: accentColor } as React.CSSProperties}
       >
-        <div className="system-node__accent" aria-hidden />
+        <div className="system-node__accent rounded-t-2xl" aria-hidden />
         <PlusHandle
           type="target"
           position={Position.Left}
-          id="parent-target"
+          id={`parent-target-${id}`}
           variant="parent"
           className="system-node__parent-handle system-node__parent-handle--target"
         />
         <PlusHandle
           type="source"
           position={Position.Right}
-          id="parent-source"
+          id={`parent-source-${id}`}
           variant="parent"
           className="system-node__parent-handle system-node__parent-handle--source"
         />
@@ -521,10 +521,12 @@ type FieldRowProps = {
 };
 
 function FieldConnectionHandle({
+  nodeId,
   fieldId,
   side,
   type,
 }: {
+  nodeId: string;
   fieldId: string;
   side: "left" | "right";
   type: "source" | "target";
@@ -533,7 +535,7 @@ function FieldConnectionHandle({
     <PlusHandle
       type={type}
       position={side === "left" ? Position.Left : Position.Right}
-      id={`${type}-${fieldId}`}
+      id={`${type}-${nodeId}-${fieldId}`}
       variant="field"
       className={`field-handle field-handle--${side}`}
     />
@@ -624,7 +626,7 @@ export function FieldRow({
           onDrop={handleReorderDrop}
         >
           <div className="system-node__field-handle-col system-node__field-handle-col--left nodrag nopan">
-            <FieldConnectionHandle fieldId={field.id} side="left" type="target" />
+            <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="left" type="target" />
           </div>
           <div
             className="system-node__field-list-item-inner"
@@ -636,7 +638,7 @@ export function FieldRow({
             <span className="system-node__field-name">{field.label}</span>
           </div>
           <div className="system-node__field-handle-col system-node__field-handle-col--right nodrag nopan">
-            <FieldConnectionHandle fieldId={field.id} side="right" type="source" />
+            <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="right" type="source" />
           </div>
         </div>
       </SmartHoverAttributes>
@@ -657,7 +659,7 @@ export function FieldRow({
         onDrop={handleReorderDrop}
       >
         <div className="system-node__field-handle-col system-node__field-handle-col--left nodrag nopan">
-          <FieldConnectionHandle fieldId={field.id} side="left" type="target" />
+          <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="left" type="target" />
         </div>
         <div
           className="system-node__table-row-inner"
@@ -701,7 +703,7 @@ export function FieldRow({
           </div>
         </div>
         <div className="system-node__field-handle-col system-node__field-handle-col--right nodrag nopan">
-          <FieldConnectionHandle fieldId={field.id} side="right" type="source" />
+          <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="right" type="source" />
         </div>
       </div>
     </SmartHoverAttributes>

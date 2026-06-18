@@ -176,7 +176,7 @@ function GroupCard({
       className="palette-card palette-card--block ui-bounce group relative cursor-grab rounded-2xl border border-slate-200 bg-white p-3 shadow-[3px_3px_0_0_rgb(15_23_42/0.06)] active:cursor-grabbing"
     >
       <span
-        className="absolute inset-x-0 top-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-[#0067F5] to-[#0DC5E7]"
+        className="absolute left-px right-px top-px h-[3px] rounded-t-2xl bg-gradient-to-r from-[#0067F5] to-[#0DC5E7]"
         aria-hidden
       />
       <div className="flex items-start justify-between gap-2 pt-1">

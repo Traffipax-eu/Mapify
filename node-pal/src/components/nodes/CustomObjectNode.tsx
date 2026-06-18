@@ -4,6 +4,7 @@ import { Trash2 } from "lucide-react";
 import { resolveCustomObjectIcon } from "@/lib/customObjects";
 import type { CustomObjectNodeData } from "@/lib/createCustomObjectNode";
 import { getNodeGroupProperties } from "@/lib/schemaProperties";
+import { useLineage } from "@/contexts/LineageContext";
 import { SmartHoverAttributes } from "@/components/SmartHoverAttributes";
 import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
 import { PlusHandle } from "./PlusHandle";
@@ -11,9 +12,15 @@ import { PlusHandle } from "./PlusHandle";
 function CustomObjectNodeImpl({ id, data: rawData, selected }: NodeProps<CustomObjectNodeData>) {
   const data: CustomObjectNodeData = rawData ?? { objectId: "custom", label: "Object" };
   const { schema, onUpdateNodeData, onDeleteNode } = useNodeCanvas();
+  const { hasLineage, lineageNodeIds, highlightedNodeIds } = useLineage();
   const Icon = resolveCustomObjectIcon(data.iconId, data.objectId);
   const accent = data.accent ?? "#3b82f6";
   const nodeProperties = getNodeGroupProperties(schema);
+
+  const inLineage = lineageNodeIds.has(id);
+  const isHighlighted = highlightedNodeIds.has(id);
+  const glow = selected || inLineage || isHighlighted;
+  const faded = hasLineage && !inLineage && !isHighlighted && !selected;
 
   const [editing, setEditing] = useState(false);
   const [labelDraft, setLabelDraft] = useState(data.label);
@@ -29,30 +36,32 @@ function CustomObjectNodeImpl({ id, data: rawData, selected }: NodeProps<CustomO
 
   return (
     <div
-      className={`custom-object-node ${selected ? "custom-object-node--selected" : ""}`}
+      className={`custom-object-node ${selected ? "custom-object-node--selected" : ""} ${
+        inLineage ? "custom-object-node--lineage" : ""
+      } ${glow ? "custom-object-node--glow" : ""} ${faded ? "custom-object-node--faded" : ""}`}
       style={{ "--object-accent": accent } as React.CSSProperties}
     >
+      <PlusHandle
+        type="target"
+        position={Position.Top}
+        id={`parent-target-${id}`}
+        variant="ghost"
+        className="custom-object-node__drop-handle pointer-events-auto opacity-0"
+      />
+      <PlusHandle
+        type="source"
+        position={Position.Top}
+        id={`parent-source-${id}`}
+        variant="ghost"
+        className="custom-object-node__drop-handle custom-object-node__drop-handle--source pointer-events-auto opacity-0"
+      />
+
       <SmartHoverAttributes
         title={data.label}
         metadata={data.metadata}
         properties={nodeProperties}
         className="custom-object-node__card nodrag nopan"
       >
-        <PlusHandle
-          type="target"
-          position={Position.Top}
-          id="parent-target"
-          variant="ghost"
-          className="custom-object-node__drop-handle"
-        />
-        <PlusHandle
-          type="source"
-          position={Position.Top}
-          id="parent-source"
-          variant="ghost"
-          className="custom-object-node__drop-handle custom-object-node__drop-handle--source"
-        />
-
         <div className="custom-object-node__icon-wrap nodrag nopan" aria-hidden>
           <Icon className="custom-object-node__icon" />
         </div>

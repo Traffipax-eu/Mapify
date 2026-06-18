@@ -83,7 +83,7 @@ import {
   sortNodesParentFirst,
 } from "@/lib/containerUtils";
 import { DEFAULT_CONNECTION_SETTINGS, type ConnectionSettings } from "@/lib/connectionSettings";
-import { normalizeConnection, parseFieldSourceId, parseFieldTargetId, type NormalizedConnection } from "@/lib/connectionUtils";
+import { normalizeConnection, parseFieldSourceId, parseFieldTargetId, fieldSourceHandle, fieldTargetHandle, type NormalizedConnection } from "@/lib/connectionUtils";
 import {
   cloneNodesForClipboard,
   duplicateNodesFromClipboard,
@@ -478,8 +478,8 @@ function InnerCanvas() {
       createEdgeFromConnection({
         sourceNodeId: source.nodeId,
         targetNodeId: target.nodeId,
-        sourceHandle: `source-${source.fieldId}`,
-        targetHandle: `target-${target.fieldId}`,
+        sourceHandle: fieldSourceHandle(source.nodeId, source.fieldId),
+        targetHandle: fieldTargetHandle(target.nodeId, target.fieldId),
         sourceFieldId: source.fieldId,
         targetFieldId: target.fieldId,
         isFieldToField: true,
@@ -884,14 +884,14 @@ function InnerCanvas() {
   const hasLineage = lineageAnchor !== null;
 
   const systemLineageNodeIds = useMemo(() => {
-    const systemIds = new Set<string>();
+    const ids = new Set<string>();
     for (const nodeId of lineage.nodeIds) {
       const node = nodes.find((item) => item.id === nodeId);
-      if (node?.type === "system") {
-        systemIds.add(nodeId);
+      if (node?.type === "system" || node?.type === "customObject") {
+        ids.add(nodeId);
       }
     }
-    return systemIds;
+    return ids;
   }, [lineage.nodeIds, nodes]);
 
   const lineageContextValue = useMemo<LineageContextValue>(
@@ -969,8 +969,16 @@ function InnerCanvas() {
         eds.filter(
           (e) =>
             !(
-              (e.source === nodeId && (e.data?.sourceFieldId === fieldId || e.sourceHandle === `source-${fieldId}`)) ||
-              (e.target === nodeId && (e.data?.targetFieldId === fieldId || e.targetHandle === `target-${fieldId}`))
+              (e.source === nodeId &&
+                (e.data?.sourceFieldId === fieldId ||
+                  e.sourceHandle === `source-${fieldId}` ||
+                  e.sourceHandle === fieldSourceHandle(nodeId, fieldId) ||
+                  parseFieldSourceId(e.sourceHandle ?? "") === fieldId)) ||
+              (e.target === nodeId &&
+                (e.data?.targetFieldId === fieldId ||
+                  e.targetHandle === `target-${fieldId}` ||
+                  e.targetHandle === fieldTargetHandle(nodeId, fieldId) ||
+                  parseFieldTargetId(e.targetHandle ?? "") === fieldId))
             ),
         ),
       );
@@ -1101,7 +1109,7 @@ function InnerCanvas() {
 
   const handleDeleteNode = useCallback(
     (nodeId: string) => {
-      setNodes((nds) => applySafeNodeRemovals(nds, [nodeId]));
+      setNodes((nds) => nds.filter((n) => n.id !== nodeId));
       cleanupAfterNodeDelete([nodeId]);
       toast.success("Node deleted");
     },
@@ -1913,6 +1921,7 @@ function InnerCanvas() {
                 onEdgesChange={onEdgesChange}
                 onConnect={onConnect}
                 onConnectEnd={onConnectEnd}
+                isValidConnection={() => true}
                 onNodesDelete={onNodesDelete}
                 onEdgesDelete={onEdgesDelete}
                 onInit={setRfInstance}
