@@ -62,7 +62,10 @@ export function attributeRowsToMetadata(
     if (propertyById.has(row.storageKey) && propertyById.get(row.storageKey)?.name?.trim() === label) {
       key = row.storageKey;
     } else {
-      key = propertyByName.get(label.toLowerCase()) ?? label;
+      key =
+        propertyByName.get(label.toLowerCase()) ??
+        propertyByName.get(row.storageKey.trim().toLowerCase()) ??
+        label;
     }
 
     next[key] = row.value;

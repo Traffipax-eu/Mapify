@@ -165,7 +165,7 @@ function AttributeRowEditor({
   const commitValue = () => {
     onCommit({
       label: keyDraft.trim() || row.label,
-      storageKey: keyDraft.trim() || row.storageKey,
+      storageKey: row.storageKey,
       value: valueDraft,
     });
   };
