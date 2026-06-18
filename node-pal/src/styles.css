@@ -796,6 +796,7 @@
 .system-node__field-list-item-inner {
   display: flex;
   align-items: center;
+  gap: 6px;
   min-height: 32px;
   padding: 6px 4px;
   cursor: grab;
@@ -959,7 +960,47 @@
 }
 .system-node__section-count,
 .system-node__section-empty {
-  display: none;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px dashed color-mix(in oklch, var(--color-border) 80%, transparent);
+  border-radius: 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-muted-foreground);
+  text-align: center;
+  background: color-mix(in oklch, var(--color-muted) 35%, transparent);
+}
+
+.system-node__section.is-drop-target .system-node__section-empty,
+.system-node__section.is-drop-target .system-node__field-list,
+.system-node__section.is-drop-target .system-node__table {
+  outline: 2px dashed color-mix(in oklch, var(--color-primary) 55%, transparent);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+.system-node__field-section-select {
+  max-width: 92px;
+  margin-left: auto;
+  padding: 2px 4px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in oklch, var(--color-border) 85%, transparent);
+  background: var(--color-background);
+  font-size: 10px;
+  color: var(--color-muted-foreground);
+}
+
+.system-node__field-section-select--table {
+  max-width: 100%;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.system-node__table-cell--actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
 }
 .system-node__section-delete {
   display: inline-flex;

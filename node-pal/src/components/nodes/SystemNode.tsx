@@ -19,9 +19,14 @@ import { getNodeGroupProperties, getFieldProperties } from "@/lib/schemaProperti
 import {
   createSection,
   DEFAULT_SECTION_ID,
+  deleteSectionFromNode,
+  ensureExplicitSections,
   getEffectiveSections,
+  getFieldSectionId,
   getFieldsForSection,
   getRenderableSections,
+  moveFieldToSection,
+  reorderFieldsInList,
   shouldShowSectionSelect,
 } from "@/lib/nodeSections";
 import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons";
@@ -124,6 +129,13 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const [addFieldSectionId, setAddFieldSectionId] = useState(sections[0]?.id ?? DEFAULT_SECTION_ID);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [sectionNameDraft, setSectionNameDraft] = useState("");
+  const [sectionDropTargetId, setSectionDropTargetId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!sections.some((section) => section.id === addFieldSectionId)) {
+      setAddFieldSectionId(sections[0]?.id ?? DEFAULT_SECTION_ID);
+    }
+  }, [sections, addFieldSectionId]);
 
   const refreshNodeLayout = useCallback(() => {
     requestAnimationFrame(() => updateNodeInternals(id));
@@ -157,18 +169,13 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     refreshNodeLayout();
   };
 
-  const ensureSectionsPersisted = (d: SystemNodeData): SystemNodeData => {
-    if (d.sections?.length) return d;
-    return { ...d, sections: getEffectiveSections(d) };
-  };
-
   const addField = () => {
     const value = newField.trim();
     if (!value) return;
     const targetSection = addFieldSectionId || sections[0]?.id || DEFAULT_SECTION_ID;
 
     update((d) => {
-      const next = ensureSectionsPersisted(d);
+      const next = ensureExplicitSections(d);
       return {
         ...next,
         fields: [
@@ -187,13 +194,15 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const addSection = () => {
     const section = createSection("New Section");
     update((d) => {
-      const next = ensureSectionsPersisted(d);
+      const next = ensureExplicitSections(d);
       return {
         ...next,
         sections: [...(next.sections ?? getEffectiveSections(next)), section],
       };
     });
     setAddFieldSectionId(section.id);
+    setSectionNameDraft(section.name);
+    setEditingSectionId(section.id);
   };
 
   const commitSectionName = (sectionId: string) => {
@@ -212,19 +221,49 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   };
 
   const deleteSection = (sectionId: string) => {
-    const sectionFields = getFieldsForSection(fields, sectionId);
-    if (sectionFields.length > 0) return;
-
-    update((d) => {
-      const currentSections = d.sections ?? getEffectiveSections(d);
-      if (currentSections.length <= 1) return d;
-      const nextSections = currentSections.filter((section) => section.id !== sectionId);
-      return { ...d, sections: nextSections };
-    });
+    update((d) => deleteSectionFromNode(d, sectionId));
 
     if (addFieldSectionId === sectionId) {
-      setAddFieldSectionId(sections.find((s) => s.id !== sectionId)?.id ?? DEFAULT_SECTION_ID);
+      setAddFieldSectionId(sections.find((section) => section.id !== sectionId)?.id ?? DEFAULT_SECTION_ID);
     }
+    if (editingSectionId === sectionId) {
+      setEditingSectionId(null);
+    }
+  };
+
+  const handleMoveFieldToSection = (fieldId: string, sectionId: string) => {
+    update((d) => ({
+      ...d,
+      fields: moveFieldToSection(d.fields ?? [], fieldId, sectionId),
+    }));
+    refreshNodeLayout();
+  };
+
+  const reorderFields = (sourceFieldId: string, targetFieldId: string) => {
+    update((d) => ({
+      ...d,
+      fields: reorderFieldsInList(d.fields ?? [], sourceFieldId, targetFieldId),
+    }));
+    refreshNodeLayout();
+  };
+
+  const handleSectionDragOver = (event: React.DragEvent, sectionId: string) => {
+    if (!event.dataTransfer.types.includes(FIELD_REORDER_MIME)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setSectionDropTargetId(sectionId);
+  };
+
+  const handleSectionDrop = (event: React.DragEvent, sectionId: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setSectionDropTargetId(null);
+
+    if (!event.dataTransfer.types.includes(FIELD_REORDER_MIME)) return;
+    const source = parseFieldReorder(event.dataTransfer.getData(FIELD_REORDER_MIME));
+    if (!source || source.nodeId !== id) return;
+    handleMoveFieldToSection(source.fieldId, sectionId);
   };
 
   const updateNodeColor = (color: string) => {
@@ -235,19 +274,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     update((d) => ({ ...d, icon }));
   };
 
-  const reorderFields = (sourceFieldId: string, targetFieldId: string) => {
-    if (sourceFieldId === targetFieldId) return;
-    update((d) => {
-      const list = [...(d.fields ?? [])];
-      const fromIndex = list.findIndex((field) => field.id === sourceFieldId);
-      const toIndex = list.findIndex((field) => field.id === targetFieldId);
-      if (fromIndex < 0 || toIndex < 0) return d;
-      const [moved] = list.splice(fromIndex, 1);
-      list.splice(toIndex, 0, moved);
-      return { ...d, fields: list };
-    });
-    refreshNodeLayout();
-  };
+  const showSectionPicker = sections.length > 1;
 
   const renderFieldList = (sectionFields: Field[]) => (
     <div className={tableExpanded ? "system-node__table" : "system-node__field-list"}>
@@ -295,6 +322,10 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           onDeleteField={onDeleteField}
           onFieldReorder={reorderFields}
           onFieldConnectDrop={onFieldConnectDrop}
+          sections={sections}
+          currentSectionId={getFieldSectionId(field)}
+          showSectionPicker={showSectionPicker}
+          onMoveFieldToSection={handleMoveFieldToSection}
         />
       ))}
     </div>
@@ -438,11 +469,17 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           <div className="system-node__sections">
             {renderableSections.map((section) => {
               const sectionFields = getFieldsForSection(fields, section.id);
-              if (sectionFields.length === 0) return null;
               const isEditingSection = editingSectionId === section.id;
+              const isDropTarget = sectionDropTargetId === section.id;
 
               return (
-                <div key={section.id} className="system-node__section">
+                <div
+                  key={section.id}
+                  className={`system-node__section ${isDropTarget ? "is-drop-target" : ""}`}
+                  onDragOver={(event) => handleSectionDragOver(event, section.id)}
+                  onDragLeave={() => setSectionDropTargetId(null)}
+                  onDrop={(event) => handleSectionDrop(event, section.id)}
+                >
                   {section.showHeader && (
                   <div className="system-node__section-header">
                     {isEditingSection ? (
@@ -479,7 +516,11 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                           deleteSection(section.id);
                         }}
                         className="system-node__section-delete nodrag nopan"
-                        title="Remove section"
+                        title={
+                          sectionFields.length > 0
+                            ? "Remove section (fields move to General)"
+                            : "Remove section"
+                        }
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
@@ -487,7 +528,13 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                   </div>
                   )}
 
-                  {renderFieldList(sectionFields)}
+                  {sectionFields.length === 0 ? (
+                    <div className="system-node__section-empty nodrag nopan">
+                      No fields yet — add below or Alt+drag fields here
+                    </div>
+                  ) : (
+                    renderFieldList(sectionFields)
+                  )}
                 </div>
               );
             })}
@@ -574,7 +621,41 @@ type FieldRowProps = {
     source: { nodeId: string; fieldId: string },
     target: { nodeId: string; fieldId: string },
   ) => void;
+  sections: FieldSection[];
+  currentSectionId: string;
+  showSectionPicker: boolean;
+  onMoveFieldToSection: (fieldId: string, sectionId: string) => void;
 };
+
+function FieldSectionSelect({
+  sections,
+  value,
+  onChange,
+  className,
+}: {
+  sections: FieldSection[];
+  value: string;
+  onChange: (sectionId: string) => void;
+  className?: string;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className={className}
+      title="Move field to section"
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {sections.map((section) => (
+        <option key={section.id} value={section.id}>
+          {section.name}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 function FieldConnectionHandle({
   nodeId,
@@ -614,6 +695,10 @@ export function FieldRow({
   onDeleteField,
   onFieldReorder,
   onFieldConnectDrop,
+  sections,
+  currentSectionId,
+  showSectionPicker,
+  onMoveFieldToSection,
 }: FieldRowProps) {
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isConnectTarget, setIsConnectTarget] = useState(false);
@@ -743,6 +828,14 @@ export function FieldRow({
             onClick={handleClick}
           >
             <span className="system-node__field-name">{field.label}</span>
+            {showSectionPicker && (
+              <FieldSectionSelect
+                sections={sections}
+                value={currentSectionId}
+                onChange={(sectionId) => onMoveFieldToSection(field.id, sectionId)}
+                className="system-node__field-section-select nodrag nopan"
+              />
+            )}
           </div>
           <div className="system-node__field-handle-col system-node__field-handle-col--right nodrag nopan pointer-events-auto">
             <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="right" type="source" />
@@ -784,6 +877,14 @@ export function FieldRow({
           </div>
         ))}
         <div className="system-node__table-cell system-node__table-cell--actions nodrag nopan">
+          {showSectionPicker && (
+            <FieldSectionSelect
+              sections={sections}
+              value={currentSectionId}
+              onChange={(sectionId) => onMoveFieldToSection(field.id, sectionId)}
+              className="system-node__field-section-select system-node__field-section-select--table nodrag nopan"
+            />
+          )}
           <button
             type="button"
             onClick={(e) => {
