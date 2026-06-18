@@ -68,8 +68,9 @@ import { normalizeSchema } from "@/lib/schemaProperties";
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
 import { createDrawingNode } from "@/lib/createDrawingNode";
 import { createContainerNode } from "@/lib/createContainerNode";
-import { createCustomObjectNode } from "@/lib/createCustomObjectNode";
-import { isCustomObjectPayload } from "@/lib/customObjects";
+import { createCustomObjectNode, createConfiguredCustomObjectNode } from "@/lib/createCustomObjectNode";
+import { isCustomObjectPayload, isCustomObjectTemplatePayload } from "@/lib/customObjects";
+import { CustomObjectDialog, type CustomObjectConfig } from "./CustomObjectDialog";
 import {
   assignNodeParent,
   applySafeNodeRemovals,
@@ -188,6 +189,10 @@ function InnerCanvas() {
   const [isEncrypting, setIsEncrypting] = useState(false);
   const [cloudSnapshotsOpen, setCloudSnapshotsOpen] = useState(false);
   const [nodeNameDialogOpen, setNodeNameDialogOpen] = useState(false);
+  const [customObjectDialogOpen, setCustomObjectDialogOpen] = useState(false);
+  const [pendingCustomObjectPosition, setPendingCustomObjectPosition] = useState<{ x: number; y: number } | null>(
+    null,
+  );
   const lastSafeRemovalIdsRef = useRef<string[]>([]);
   const [pendingNodeDrop, setPendingNodeDrop] = useState<{
     position: { x: number; y: number };
@@ -609,11 +614,47 @@ function InnerCanvas() {
         return;
       }
 
+      if (isCustomObjectTemplatePayload(item)) {
+        setPendingCustomObjectPosition(position);
+        setCustomObjectDialogOpen(true);
+        return;
+      }
+
       if (isCustomObjectPayload(item)) {
         setNodes((nds) => nds.concat(createCustomObjectNode(item.objectId, position, nextNodeId)));
       }
     },
     [rfInstance, setNodes],
+  );
+
+  const openCustomObjectCreator = useCallback(() => {
+    setPendingCustomObjectPosition(null);
+    setCustomObjectDialogOpen(true);
+  }, []);
+
+  const handleCustomObjectConfirm = useCallback(
+    (config: CustomObjectConfig) => {
+      const position =
+        pendingCustomObjectPosition ??
+        (rfInstance
+          ? rfInstance.screenToFlowPosition({
+              x: window.innerWidth / 2,
+              y: window.innerHeight / 2,
+            })
+          : { x: 0, y: 0 });
+
+      setNodes((nds) =>
+        nds.concat(
+          createConfiguredCustomObjectNode(position, nextNodeId, {
+            label: config.label,
+            accent: config.accent,
+            iconId: config.iconId,
+          }),
+        ),
+      );
+      setPendingCustomObjectPosition(null);
+    },
+    [pendingCustomObjectPosition, rfInstance, setNodes],
   );
 
   const createNodeFromDrop = useCallback(
@@ -1781,6 +1822,7 @@ function InnerCanvas() {
           schema={schema}
           onUpdateSchema={setSchema}
           onOpenSchemaBuilder={handleOpenSchemaEditor}
+          onOpenCustomObjectCreator={openCustomObjectCreator}
           onDeleteGroup={handleDeleteGroup}
         />
         {activeView === "glossary" ? (
@@ -1845,9 +1887,9 @@ function InnerCanvas() {
                 multiSelectionKeyCode={["Meta", "Control"]}
                 fitView
                 proOptions={{ hideAttribution: true }}
-                style={{ background: "#f0f4f8" }}
+                style={{ background: "var(--canvas-bg, #faf9f6)" }}
               >
-            <Background gap={20} color="#cbd5e1" />
+            <Background gap={18} size={1.5} color="var(--canvas-dot, #c9c4b8)" />
             <Controls />
             <MiniMap pannable zoomable />
             {nodes.length === 0 && (
@@ -1917,6 +1959,15 @@ function InnerCanvas() {
         open={cloudSnapshotsOpen}
         onOpenChange={setCloudSnapshotsOpen}
         onSelect={handleCloudSnapshotSelect}
+      />
+
+      <CustomObjectDialog
+        open={customObjectDialogOpen}
+        onOpenChange={(open) => {
+          setCustomObjectDialogOpen(open);
+          if (!open) setPendingCustomObjectPosition(null);
+        }}
+        onConfirm={handleCustomObjectConfirm}
       />
 
       <EncryptionModal

@@ -29,7 +29,9 @@ export type CustomObjectId =
   | "etl-pipeline"
   | "user-role";
 
-export type CustomObjectPayload = { kind: "custom-object"; objectId: CustomObjectId };
+export type CustomObjectPayload =
+  | { kind: "custom-object"; objectId: CustomObjectId }
+  | { kind: "custom-object-template" };
 
 export type CustomObjectDefinition = {
   id: CustomObjectId;
@@ -49,16 +51,16 @@ export const CUSTOM_OBJECT_CATEGORIES: { id: CustomObjectCategory; label: string
 ];
 
 export const CUSTOM_OBJECT_COLOR_PALETTE = [
-  "#22c55e",
+  "#FF7A6E",
+  "#2EC4B6",
+  "#FFD166",
+  "#A78BFA",
+  "#FF6B9D",
+  "#4CC9F0",
+  "#06D6A0",
+  "#8338EC",
+  "#F77F00",
   "#64748b",
-  "#6366f1",
-  "#f59e0b",
-  "#a855f7",
-  "#0ea5e9",
-  "#14b8a6",
-  "#3b82f6",
-  "#ec4899",
-  "#ef4444",
 ];
 
 export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
@@ -77,7 +79,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Delimited flat file extract",
     defaultName: "CSV File",
     icon: FileText,
-    accent: "#64748b",
+    accent: "#94A3B8",
     category: "documents",
   },
   {
@@ -86,7 +88,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Structured message or API payload",
     defaultName: "JSON Payload",
     icon: Braces,
-    accent: "#6366f1",
+    accent: "#A78BFA",
     category: "documents",
   },
   {
@@ -95,7 +97,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Published BI report or semantic model output",
     defaultName: "Power BI Report",
     icon: BarChart3,
-    accent: "#f59e0b",
+    accent: "#FFD166",
     category: "analytics",
   },
   {
@@ -104,7 +106,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Trained model artifact or scoring endpoint",
     defaultName: "ML Model",
     icon: Brain,
-    accent: "#a855f7",
+    accent: "#FF6B9D",
     category: "analytics",
   },
   {
@@ -113,7 +115,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Operational dashboard or KPI view",
     defaultName: "Dashboard",
     icon: LayoutDashboard,
-    accent: "#0ea5e9",
+    accent: "#4CC9F0",
     category: "analytics",
   },
   {
@@ -122,7 +124,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Notebook, script, or batch job step",
     defaultName: "Python Script",
     icon: FileCode,
-    accent: "#14b8a6",
+    accent: "#2EC4B6",
     category: "processes",
   },
   {
@@ -131,7 +133,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "REST, GraphQL, or webhook interface",
     defaultName: "API Endpoint",
     icon: Unplug,
-    accent: "#3b82f6",
+    accent: "#8338EC",
     category: "processes",
   },
   {
@@ -140,7 +142,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Extract, transform, and load workflow",
     defaultName: "ETL Pipeline",
     icon: Workflow,
-    accent: "#ec4899",
+    accent: "#FF7A6E",
     category: "processes",
   },
   {
@@ -149,7 +151,7 @@ export const CUSTOM_OBJECTS: CustomObjectDefinition[] = [
     description: "Persona, operator, or stakeholder",
     defaultName: "User Role",
     icon: UserCircle,
-    accent: "#14b8a6",
+    accent: "#06D6A0",
     category: "actors",
   },
 ];
@@ -164,12 +166,22 @@ const LEGACY_CUSTOM_OBJECTS: Partial<CustomObjectDefinition & { id: string }>[] 
   { id: "custom", label: "Custom Object", defaultName: "Custom Object", icon: Sparkles, accent: "#6366f1" },
 ];
 
-export function isCustomObjectPayload(value: unknown): value is CustomObjectPayload {
+export function isCustomObjectPayload(value: unknown): value is Extract<CustomObjectPayload, { kind: "custom-object" }> {
   return (
     typeof value === "object" &&
     value !== null &&
     (value as CustomObjectPayload).kind === "custom-object" &&
     typeof (value as { objectId?: string }).objectId === "string"
+  );
+}
+
+export function isCustomObjectTemplatePayload(
+  value: unknown,
+): value is Extract<CustomObjectPayload, { kind: "custom-object-template" }> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as CustomObjectPayload).kind === "custom-object-template"
   );
 }
 

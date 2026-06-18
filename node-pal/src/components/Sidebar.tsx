@@ -11,23 +11,21 @@ import {
   ChevronRight,
   Box,
   Layers,
+  Sparkles,
 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { Schema, NodeGroupSchema } from "@/lib/storage";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import type { Dispatch, SetStateAction } from "react";
 import { DRAWING_TOOLS, type DrawingToolId } from "@/lib/drawingTools";
-import {
-  CUSTOM_OBJECT_CATEGORIES,
-  getCustomObjectsByCategory,
-  type CustomObjectId,
-} from "@/lib/customObjects";
+import { CUSTOM_OBJECTS, type CustomObjectId } from "@/lib/customObjects";
 
 interface Props {
   schema: Schema;
   onUpdateSchema: Dispatch<SetStateAction<Schema>>;
   onOpenSchemaBuilder: (groupId: string) => void;
   onDeleteGroup: (groupId: string) => void;
+  onOpenCustomObjectCreator: () => void;
 }
 
 const TOOL_ICONS: Record<DrawingToolId, typeof Type> = {
@@ -36,7 +34,13 @@ const TOOL_ICONS: Record<DrawingToolId, typeof Type> = {
   container: Box,
 };
 
-export function Sidebar({ schema, onUpdateSchema, onOpenSchemaBuilder, onDeleteGroup }: Props) {
+export function Sidebar({
+  schema,
+  onUpdateSchema,
+  onOpenSchemaBuilder,
+  onDeleteGroup,
+  onOpenCustomObjectCreator,
+}: Props) {
   const [toolsOpen, setToolsOpen] = useState(true);
   const [artifactsOpen, setArtifactsOpen] = useState(true);
 
@@ -45,7 +49,7 @@ export function Sidebar({ schema, onUpdateSchema, onOpenSchemaBuilder, onDeleteG
       id: `ng_${Date.now()}`,
       name: `Group ${schema.nodeGroups.length + 1}`,
       properties: [],
-      color: "#5b8fd9",
+      color: "#A78BFA",
     };
 
     onUpdateSchema((prev) => ({
@@ -56,18 +60,18 @@ export function Sidebar({ schema, onUpdateSchema, onOpenSchemaBuilder, onDeleteG
   };
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
+    <aside className="mapify-sidebar flex w-72 shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground">
       <div className="flex items-center justify-between p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <Database className="h-4 w-4" />
+        <div className="flex items-center gap-2 text-sm font-bold tracking-tight">
+          <Database className="h-4 w-4 text-primary" />
           <span>Node Groups</span>
         </div>
         <button
           onClick={addGroup}
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition hover:bg-accent"
+          className="palette-chip ui-bounce inline-flex items-center gap-1 rounded-xl border-2 border-border bg-background px-2.5 py-1.5 text-xs font-semibold text-foreground"
         >
           <Plus className="h-3.5 w-3.5" />
-          Create New Group
+          New Group
         </button>
       </div>
 
@@ -88,9 +92,9 @@ export function Sidebar({ schema, onUpdateSchema, onOpenSchemaBuilder, onDeleteG
         ))}
 
         <Collapsible open={toolsOpen} onOpenChange={setToolsOpen} className="mt-2 border-t border-sidebar-border pt-4">
-          <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 rounded-lg px-1 py-2 text-sm font-semibold hover:bg-accent/50 transition">
+          <CollapsibleTrigger className="ui-bounce flex w-full items-center justify-between gap-2 rounded-xl px-1 py-2 text-sm font-bold tracking-tight hover:bg-accent/50 transition">
             <span className="flex items-center gap-2">
-              <Shapes className="h-4 w-4" />
+              <Shapes className="h-4 w-4 text-primary" />
               Drawing Tools
             </span>
             {toolsOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
@@ -103,10 +107,10 @@ export function Sidebar({ schema, onUpdateSchema, onOpenSchemaBuilder, onDeleteG
         </Collapsible>
 
         <Collapsible open={artifactsOpen} onOpenChange={setArtifactsOpen} className="mt-2 border-t border-sidebar-border pt-4">
-          <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 rounded-lg px-1 py-2 text-sm font-semibold hover:bg-accent/50 transition">
+          <CollapsibleTrigger className="ui-bounce flex w-full items-center justify-between gap-2 rounded-xl px-1 py-2 text-sm font-bold tracking-tight hover:bg-accent/50 transition">
             <span className="flex items-center gap-2">
-              <Layers className="h-4 w-4" />
-              Artifacts & Processes
+              <Layers className="h-4 w-4 text-primary" />
+              Data Assets
             </span>
             {artifactsOpen ? (
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -114,33 +118,24 @@ export function Sidebar({ schema, onUpdateSchema, onOpenSchemaBuilder, onDeleteG
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             )}
           </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2 space-y-4">
-            {CUSTOM_OBJECT_CATEGORIES.map((category) => {
-              const items = getCustomObjectsByCategory(category.id);
-              return (
-                <div key={category.id} className="artifact-palette__category">
-                  <p className="artifact-palette__category-label">{category.label}</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {items.map((object) => (
-                      <ArtifactCard
-                        key={object.id}
-                        objectId={object.id}
-                        label={object.label}
-                        description={object.description}
-                        icon={object.icon}
-                        accent={object.accent}
-                      />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+          <CollapsibleContent className="mt-2 grid grid-cols-2 gap-2">
+            {CUSTOM_OBJECTS.map((object) => (
+              <ArtifactCard
+                key={object.id}
+                objectId={object.id}
+                label={object.label}
+                description={object.description}
+                icon={object.icon}
+                accent={object.accent}
+              />
+            ))}
+            <CustomObjectCreatorCard onOpen={onOpenCustomObjectCreator} />
           </CollapsibleContent>
         </Collapsible>
       </div>
 
       <div className="mt-auto border-t border-sidebar-border p-4 text-xs text-muted-foreground">
-        Drag node groups, artifacts, or drawing tools onto the canvas.
+        Drag groups, assets, or tools onto the canvas.
       </div>
     </aside>
   );
@@ -157,6 +152,8 @@ function GroupCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const accent = item.color || "#A78BFA";
+
   const onDragStart = (e: React.DragEvent, group: NodeGroupSchema) => {
     e.dataTransfer.setData("application/reactflow", JSON.stringify({ kind: "node-group", ...group }));
     e.dataTransfer.effectAllowed = "move";
@@ -171,15 +168,16 @@ function GroupCard({
     <div
       draggable
       onDragStart={(e) => onDragStart(e, item)}
-      className="group rounded-xl border bg-background/70 p-3 transition hover:-translate-y-0.5 hover:shadow-sm cursor-grab active:cursor-grabbing"
+      className="palette-card ui-bounce group cursor-grab rounded-2xl border-2 bg-background/80 p-3 active:cursor-grabbing"
       style={{
-        borderColor: item.color || "#5b8fd9",
-        backgroundColor: `${item.color || "#5b8fd9"}10`,
+        borderColor: `${accent}66`,
+        backgroundColor: `${accent}12`,
+        boxShadow: `3px 3px 0 0 ${accent}22`,
       }}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">{item.name}</p>
+          <p className="truncate text-sm font-bold tracking-tight">{item.name}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {globalCount} {SCHEMA_SCOPE_LABELS.global.short} · {item.properties.length}{" "}
             {SCHEMA_SCOPE_LABELS.group.short}
@@ -193,7 +191,7 @@ function GroupCard({
               stop(e);
               onEdit();
             }}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            className="ui-bounce inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-foreground"
             title="Edit group schema"
           >
             <Settings className="h-3.5 w-3.5" />
@@ -205,15 +203,12 @@ function GroupCard({
               stop(e);
               onDelete();
             }}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+            className="ui-bounce inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
             title="Delete group and remove from canvas"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
-          <span
-            className="h-2.5 w-2.5 rounded-full ml-1"
-            style={{ backgroundColor: item.color || "#5b8fd9" }}
-          />
+          <span className="ml-1 h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accent }} />
         </div>
       </div>
     </div>
@@ -244,12 +239,13 @@ function DrawingToolCard({
       draggable
       onDragStart={onDragStart}
       title={description}
-      className="flex flex-col items-center gap-1.5 rounded-lg border border-border bg-background/80 p-3 text-center transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm cursor-grab active:cursor-grabbing"
+      className="palette-card ui-bounce flex cursor-grab flex-col items-center gap-1.5 rounded-2xl border-2 border-border bg-background/90 p-2.5 text-center active:cursor-grabbing"
+      style={{ boxShadow: "3px 3px 0 0 rgb(15 23 42 / 0.06)" }}
     >
-      <div className="flex h-9 w-9 items-center justify-center rounded-md border border-dashed border-muted-foreground/40 bg-muted/30">
+      <div className="flex h-9 w-9 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/25">
         <Icon className="h-4 w-4 text-foreground" />
       </div>
-      <span className="text-[11px] font-medium leading-tight">{label}</span>
+      <span className="text-[10px] font-bold leading-tight tracking-tight">{label}</span>
     </div>
   );
 }
@@ -280,15 +276,56 @@ function ArtifactCard({
       draggable
       onDragStart={onDragStart}
       title={description}
-      className="artifact-palette__card flex flex-col items-center gap-1.5 rounded-lg border border-border bg-background/80 p-2.5 text-center transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-sm cursor-grab active:cursor-grabbing"
+      className="palette-card ui-bounce flex min-h-[76px] cursor-grab flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-background/90 p-2 text-center active:cursor-grabbing"
+      style={{
+        borderColor: `${accent}55`,
+        boxShadow: `3px 3px 0 0 ${accent}20`,
+      }}
     >
       <div
-        className="flex h-9 w-9 items-center justify-center rounded-md border bg-muted/20"
+        className="flex h-9 w-9 items-center justify-center rounded-xl border-2 bg-white/70"
         style={{ borderColor: `${accent}44`, color: accent }}
       >
         <Icon className="h-4 w-4" />
       </div>
-      <span className="text-[10px] font-medium leading-tight text-foreground/90">{label}</span>
+      <span className="text-[10px] font-bold leading-tight tracking-tight text-foreground/90">{label}</span>
     </div>
+  );
+}
+
+function CustomObjectCreatorCard({ onOpen }: { onOpen: () => void }) {
+  const accent = "#8338EC";
+
+  const onDragStart = (e: React.DragEvent) => {
+    e.dataTransfer.setData(
+      "application/reactflow",
+      JSON.stringify({ kind: "custom-object-template" }),
+    );
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  return (
+    <button
+      type="button"
+      draggable
+      onDragStart={onDragStart}
+      onClick={onOpen}
+      title="Pick your own icon and color"
+      className="palette-card ui-bounce flex min-h-[76px] cursor-grab flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed bg-background/90 p-2 text-center active:cursor-grabbing"
+      style={{
+        borderColor: `${accent}66`,
+        boxShadow: `3px 3px 0 0 ${accent}18`,
+      }}
+    >
+      <div
+        className="flex h-9 w-9 items-center justify-center rounded-xl border-2 bg-white/70"
+        style={{ borderColor: `${accent}44`, color: accent }}
+      >
+        <Sparkles className="h-4 w-4" />
+      </div>
+      <span className="text-[10px] font-bold leading-tight tracking-tight text-foreground/90">
+        Custom Object
+      </span>
+    </button>
   );
 }
