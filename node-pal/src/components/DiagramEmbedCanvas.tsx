@@ -127,6 +127,11 @@ function DiagramEmbedCanvasInner({ payload, className }: Props) {
   const nodeCanvasValue = useMemo(
     () => ({
       schema,
+      edges,
+      selectedEdgeId: null,
+      lineageEdgeIds: lineage.edgeIds,
+      hasLineage: lineageAnchor !== null,
+      onSelectEdge: () => undefined,
       onUpdateNodeData: () => undefined,
       onUpdateStickyNoteData: () => undefined,
       onDeleteNode: () => undefined,
@@ -136,7 +141,7 @@ function DiagramEmbedCanvasInner({ payload, className }: Props) {
       onFieldToNodeConnectDrop: () => undefined,
       onUpdateDrawingNodeData: () => undefined,
     }),
-    [schema, handleFieldSelect],
+    [schema, edges, lineage.edgeIds, lineageAnchor, handleFieldSelect],
   );
 
   return (

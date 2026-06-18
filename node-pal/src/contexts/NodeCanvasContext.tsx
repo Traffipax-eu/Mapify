@@ -1,10 +1,16 @@
 import { createContext, useContext, type ReactNode } from "react";
+import type { Edge } from "reactflow";
 import type { Schema } from "@/lib/storage";
 import type { SystemNodeData } from "@/components/nodes/SystemNode";
 import type { StickyNoteData } from "@/components/nodes/StickyNoteNode";
 
 export type NodeCanvasContextValue = {
   schema: Schema;
+  edges: Edge[];
+  selectedEdgeId: string | null;
+  lineageEdgeIds: Set<string>;
+  hasLineage: boolean;
+  onSelectEdge: (edgeId: string) => void;
   onUpdateNodeData: (nodeId: string, updater: (data: SystemNodeData) => SystemNodeData) => void;
   onUpdateStickyNoteData: (nodeId: string, updater: (data: StickyNoteData) => StickyNoteData) => void;
   onDeleteNode: (nodeId: string) => void;

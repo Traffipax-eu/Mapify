@@ -20,6 +20,7 @@ import {
   getBlockFieldAttributeDefinitions,
 } from "@/lib/fieldMetadata";
 import { getNodeGroupProperties } from "@/lib/schemaProperties";
+import { BlockInternalFieldLinks } from "@/components/nodes/BlockInternalFieldLinks";
 import {
   createSection,
   DEFAULT_SECTION_ID,
@@ -36,9 +37,16 @@ import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import { BRAND } from "@/lib/brand";
 import {
+  beginFieldConnectionDrag,
+  commitFieldConnectionDrag,
   FIELD_CONNECTION_MIME,
+  finishFieldConnectionDrag,
+  getActiveFieldConnectionSource,
+  isFieldConnectionDragActive,
   parseFieldConnectionDrag,
   serializeFieldConnectionDrag,
+  trackFieldConnectionHoverTarget,
+  tryCommitFieldConnectionDragEnd,
 } from "@/lib/fieldConnectionDnD";
 import {
   FIELD_REORDER_MIME,
@@ -251,11 +259,11 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   };
 
   const handleSectionDrop = (event: React.DragEvent, sectionId: string) => {
+    if (!event.dataTransfer.types.includes(FIELD_REORDER_MIME)) return;
     event.preventDefault();
     event.stopPropagation();
     setSectionDropTargetId(null);
 
-    if (!event.dataTransfer.types.includes(FIELD_REORDER_MIME)) return;
     const source = parseFieldReorder(event.dataTransfer.getData(FIELD_REORDER_MIME));
     if (!source || source.nodeId !== id) return;
     handleMoveFieldToSection(source.fieldId, sectionId);
@@ -388,6 +396,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
         className="system-node__parent-handle system-node__parent-handle--source"
       />
 
+      <BlockInternalFieldLinks nodeId={id}>
       <div className="system-node__surface flex flex-col overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-sm">
         <SmartHoverAttributes
           title={data.label ?? "System"}
@@ -574,6 +583,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
         </div>
       )}
       </div>
+      </BlockInternalFieldLinks>
     </div>
   );
 }
@@ -663,6 +673,11 @@ export function FieldRow({
       );
       e.dataTransfer.effectAllowed = "move";
     } else {
+      beginFieldConnectionDrag({
+        kind: "field-connection",
+        sourceNodeId: nodeId,
+        sourceFieldId: field.id,
+      });
       e.dataTransfer.setData(
         FIELD_CONNECTION_MIME,
         serializeFieldConnectionDrag({
@@ -675,10 +690,14 @@ export function FieldRow({
     }
   };
 
-  const handleDragEnd = () => {
+  const handleDragEnd = (e: React.DragEvent) => {
     setIsDragging(false);
     setIsDropTarget(false);
     setIsConnectTarget(false);
+    if (isFieldConnectionDragActive()) {
+      tryCommitFieldConnectionDragEnd(e.clientX, e.clientY, onFieldConnectDrop);
+      finishFieldConnectionDrag();
+    }
     window.setTimeout(() => {
       dragStartedRef.current = false;
     }, 0);
@@ -689,6 +708,7 @@ export function FieldRow({
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = "copy";
+      trackFieldConnectionHoverTarget({ nodeId, fieldId: field.id });
       setIsConnectTarget(true);
       setIsDropTarget(false);
       return;
@@ -715,9 +735,11 @@ export function FieldRow({
     setIsDragging(false);
 
     if (e.dataTransfer.types.includes(FIELD_CONNECTION_MIME)) {
-      const source = parseFieldConnectionDrag(e.dataTransfer.getData(FIELD_CONNECTION_MIME));
+      let source = parseFieldConnectionDrag(e.dataTransfer.getData(FIELD_CONNECTION_MIME));
+      if (!source) source = getActiveFieldConnectionSource();
       if (!source) return;
       if (source.sourceNodeId === nodeId && source.sourceFieldId === field.id) return;
+      commitFieldConnectionDrag();
       onFieldConnectDrop(
         { nodeId: source.sourceNodeId, fieldId: source.sourceFieldId },
         { nodeId, fieldId: field.id },
@@ -746,6 +768,7 @@ export function FieldRow({
       >
         <div
           className="system-node__field-row-outer nodrag nopan"
+          data-field-row-id={field.id}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -781,6 +804,7 @@ export function FieldRow({
     >
       <div
         className="system-node__field-row-outer system-node__field-row-outer--table nodrag nopan"
+        data-field-row-id={field.id}
         style={fullTableGridStyle}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}

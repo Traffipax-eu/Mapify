@@ -88,7 +88,7 @@ export function isFieldConnectionHandle(handle: string | null | undefined): bool
 }
 
 export function normalizeConnection(params: Connection): NormalizedConnection | null {
-  if (!params.source || !params.target || params.source === params.target) return null;
+  if (!params.source || !params.target) return null;
 
   let sourceNodeId = params.source;
   let targetNodeId = params.target;
@@ -157,8 +157,15 @@ export function normalizeConnection(params: Connection): NormalizedConnection | 
   const isFieldToParent = Boolean(sourceFieldId && !targetFieldId);
   const isParentToField = Boolean(!sourceFieldId && targetFieldId);
 
+  const rejectInvalidSameNode = (conn: NormalizedConnection): NormalizedConnection | null => {
+    if (conn.sourceNodeId !== conn.targetNodeId) return conn;
+    if (!conn.isFieldToField) return null;
+    if (conn.sourceFieldId === conn.targetFieldId) return null;
+    return conn;
+  };
+
   if (!isFieldToField && !isParentToParent && !isFieldToParent && !isParentToField) {
-    return {
+    return rejectInvalidSameNode({
       sourceNodeId,
       targetNodeId,
       sourceHandle: parentSourceHandle(sourceNodeId),
@@ -167,10 +174,10 @@ export function normalizeConnection(params: Connection): NormalizedConnection | 
       targetFieldId: null,
       isFieldToField: false,
       isParentToParent: true,
-    };
+    });
   }
 
-  return {
+  return rejectInvalidSameNode({
     sourceNodeId,
     targetNodeId,
     sourceHandle,
@@ -179,5 +186,5 @@ export function normalizeConnection(params: Connection): NormalizedConnection | 
     targetFieldId,
     isFieldToField,
     isParentToParent,
-  };
+  });
 }

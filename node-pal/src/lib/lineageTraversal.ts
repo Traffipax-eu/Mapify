@@ -1,4 +1,5 @@
 import type { Edge, Node } from "reactflow";
+import { isInternalBlockFieldEdge } from "@/lib/internalFieldLinks";
 import type { SystemNodeData } from "@/components/nodes/SystemNode";
 import { parseFieldSourceId, parseFieldTargetId } from "@/lib/connectionUtils";
 import { buildMarker, type EdgeMarkerStyle } from "@/lib/edgeMarkers";
@@ -216,7 +217,9 @@ export function decorateEdgesForDisplay(
       type: edge.type ?? "custom",
       selected: isSelected,
       hidden: Boolean(
-        hiddenNodeIds?.has(edge.source) || hiddenNodeIds?.has(edge.target),
+        hiddenNodeIds?.has(edge.source) ||
+          hiddenNodeIds?.has(edge.target) ||
+          isInternalBlockFieldEdge(edge),
       ),
       animated: inLineage,
       zIndex: inLineage || isSelected ? 3 : 1,

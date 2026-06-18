@@ -91,7 +91,20 @@ import {
 } from "@/lib/containerUtils";
 import { DEFAULT_CONNECTION_SETTINGS, type ConnectionSettings } from "@/lib/connectionSettings";
 import { BRAND } from "@/lib/brand";
-import { normalizeConnection, parseFieldSourceId, parseFieldTargetId, fieldSourceHandle, fieldTargetHandle, parentTargetHandle, isFieldConnectionHandle, type NormalizedConnection } from "@/lib/connectionUtils";
+import {
+  normalizeConnection,
+  parseFieldSourceId,
+  parseFieldTargetId,
+  fieldSourceHandle,
+  fieldTargetHandle,
+  parentTargetHandle,
+  isFieldConnectionHandle,
+  type NormalizedConnection,
+} from "@/lib/connectionUtils";
+import {
+  finishFieldConnectionDrag,
+  tryCommitFieldConnectionDragEnd,
+} from "@/lib/fieldConnectionDnD";
 import {
   cloneNodesForClipboard,
   duplicateNodesFromClipboard,
@@ -498,6 +511,15 @@ function InnerCanvas() {
     [createEdgeFromConnection],
   );
 
+  useEffect(() => {
+    const onDragEnd = (event: DragEvent) => {
+      tryCommitFieldConnectionDragEnd(event.clientX, event.clientY, handleFieldConnectDrop);
+      finishFieldConnectionDrag();
+    };
+    window.addEventListener("dragend", onDragEnd);
+    return () => window.removeEventListener("dragend", onDragEnd);
+  }, [handleFieldConnectDrop]);
+
   const handleFieldToNodeConnectDrop = useCallback(
     (source: { nodeId: string; fieldId: string }, targetNodeId: string) => {
       if (source.nodeId === targetNodeId) return;
@@ -519,9 +541,21 @@ function InnerCanvas() {
   const isValidConnection = useCallback(
     (connection: Connection) => {
       if (!connection.source || !connection.target) return false;
-      if (connection.source === connection.target) return false;
+
       const sourceHandle = connection.sourceHandle ?? "";
       const targetHandle = connection.targetHandle ?? "";
+
+      if (connection.source === connection.target) {
+        if (!isFieldConnectionHandle(sourceHandle) || !isFieldConnectionHandle(targetHandle)) {
+          return false;
+        }
+        const sourceFieldId =
+          parseFieldSourceId(sourceHandle) ?? parseFieldTargetId(sourceHandle);
+        const targetFieldId =
+          parseFieldTargetId(targetHandle) ?? parseFieldSourceId(targetHandle);
+        return Boolean(sourceFieldId && targetFieldId && sourceFieldId !== targetFieldId);
+      }
+
       if (isFieldConnectionHandle(sourceHandle) || isFieldConnectionHandle(targetHandle)) {
         return true;
       }
@@ -1257,6 +1291,11 @@ function InnerCanvas() {
   const nodeCanvasValue = useMemo<NodeCanvasContextValue>(
     () => ({
       schema,
+      edges,
+      selectedEdgeId,
+      lineageEdgeIds: lineage.edgeIds,
+      hasLineage,
+      onSelectEdge: openEdgeSettings,
       onUpdateNodeData: handleUpdateNodeData,
       onUpdateStickyNoteData: handleUpdateStickyNoteData,
       onDeleteNode: handleDeleteNode,
@@ -1268,6 +1307,11 @@ function InnerCanvas() {
     }),
     [
       schema,
+      edges,
+      selectedEdgeId,
+      lineage.edgeIds,
+      hasLineage,
+      openEdgeSettings,
       handleUpdateNodeData,
       handleUpdateStickyNoteData,
       handleDeleteNode,

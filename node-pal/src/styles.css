@@ -264,7 +264,15 @@
     transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.system-node:hover .system-node__surface {
+.system-node__internal-links-host {
+  position: relative;
+  display: block;
+  overflow: visible;
+  transition:
+    transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.system-node:hover .system-node__internal-links-host {
   transform: scale(1.015);
 }
 .system-node__body {
@@ -274,6 +282,51 @@
 .system-node__body--empty {
   padding-top: 0;
 }
+
+.system-node__internal-links-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.system-node__internal-link-hit {
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  transition: stroke-width 0.12s ease, opacity 0.12s ease;
+}
+
+.system-node__internal-link-hit--wide {
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.system-node__internal-link-hit:not(.system-node__internal-link-hit--wide) {
+  pointer-events: none;
+}
+
+.system-node__internal-link-hit--wide:hover + .system-node__internal-link-hit {
+  stroke-width: 2.5;
+}
+
+.system-node__internal-link--faded .system-node__internal-link-hit {
+  opacity: 0.2;
+}
+
+.system-node__internal-link--lineage .system-node__internal-link-hit {
+  stroke-width: 2.25;
+  stroke-dasharray: 8 5;
+  animation: lineage-dash 1s linear infinite;
+}
+
+.system-node__internal-link--selected .system-node__internal-link-hit {
+  stroke-width: 2.25;
+}
+
 .system-node--selected .system-node__surface {
   border-color: #94a3b8 !important;
   box-shadow:
@@ -907,6 +960,8 @@
 }
 
 .system-node__sections {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 10px;
