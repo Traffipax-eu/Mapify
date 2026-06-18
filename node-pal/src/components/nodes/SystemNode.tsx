@@ -27,7 +27,6 @@ import {
   getRenderableSections,
   moveFieldToSection,
   reorderFieldsInList,
-  shouldShowSectionSelect,
 } from "@/lib/nodeSections";
 import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
@@ -82,7 +81,6 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const fields = data.fields ?? [];
   const sections = useMemo(() => getEffectiveSections(data), [data.sections]);
   const renderableSections = useMemo(() => getRenderableSections(data, fields), [data, fields]);
-  const showSectionSelect = useMemo(() => shouldShowSectionSelect(data), [data]);
   const collapsed = !!data.collapsed;
   const tableExpanded = !!data.tableExpanded;
   const faded = hasLineage && !lineageNodeIds.has(id);
@@ -264,6 +262,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     const source = parseFieldReorder(event.dataTransfer.getData(FIELD_REORDER_MIME));
     if (!source || source.nodeId !== id) return;
     handleMoveFieldToSection(source.fieldId, sectionId);
+    setAddFieldSectionId(sectionId);
   };
 
   const updateNodeColor = (color: string) => {
@@ -273,8 +272,6 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const updateNodeIcon = (icon: NodeIconId) => {
     update((d) => ({ ...d, icon }));
   };
-
-  const showSectionPicker = sections.length > 1;
 
   const renderFieldList = (sectionFields: Field[]) => (
     <div className={tableExpanded ? "system-node__table" : "system-node__field-list"}>
@@ -322,10 +319,6 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           onDeleteField={onDeleteField}
           onFieldReorder={reorderFields}
           onFieldConnectDrop={onFieldConnectDrop}
-          sections={sections}
-          currentSectionId={getFieldSectionId(field)}
-          showSectionPicker={showSectionPicker}
-          onMoveFieldToSection={handleMoveFieldToSection}
         />
       ))}
     </div>
@@ -546,23 +539,6 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
             onMouseDown={stopPointer}
             onClick={stopPointer}
           >
-            {showSectionSelect && (
-            <select
-              value={addFieldSectionId}
-              onChange={(e) => setAddFieldSectionId(e.target.value)}
-              className="system-node__section-select nodrag nopan"
-              title="Target section"
-              onPointerDown={stopPointer}
-              onMouseDown={stopPointer}
-              onClick={stopPointer}
-            >
-              {sections.map((section) => (
-                <option key={section.id} value={section.id}>
-                  {section.name}
-                </option>
-              ))}
-            </select>
-            )}
             <input
               value={newField}
               onChange={(e) => setNewField(e.target.value)}
@@ -621,41 +597,7 @@ type FieldRowProps = {
     source: { nodeId: string; fieldId: string },
     target: { nodeId: string; fieldId: string },
   ) => void;
-  sections: FieldSection[];
-  currentSectionId: string;
-  showSectionPicker: boolean;
-  onMoveFieldToSection: (fieldId: string, sectionId: string) => void;
 };
-
-function FieldSectionSelect({
-  sections,
-  value,
-  onChange,
-  className,
-}: {
-  sections: FieldSection[];
-  value: string;
-  onChange: (sectionId: string) => void;
-  className?: string;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className={className}
-      title="Move field to section"
-      onPointerDown={(event) => event.stopPropagation()}
-      onMouseDown={(event) => event.stopPropagation()}
-      onClick={(event) => event.stopPropagation()}
-    >
-      {sections.map((section) => (
-        <option key={section.id} value={section.id}>
-          {section.name}
-        </option>
-      ))}
-    </select>
-  );
-}
 
 function FieldConnectionHandle({
   nodeId,
@@ -695,10 +637,6 @@ export function FieldRow({
   onDeleteField,
   onFieldReorder,
   onFieldConnectDrop,
-  sections,
-  currentSectionId,
-  showSectionPicker,
-  onMoveFieldToSection,
 }: FieldRowProps) {
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isConnectTarget, setIsConnectTarget] = useState(false);
@@ -828,14 +766,6 @@ export function FieldRow({
             onClick={handleClick}
           >
             <span className="system-node__field-name">{field.label}</span>
-            {showSectionPicker && (
-              <FieldSectionSelect
-                sections={sections}
-                value={currentSectionId}
-                onChange={(sectionId) => onMoveFieldToSection(field.id, sectionId)}
-                className="system-node__field-section-select nodrag nopan"
-              />
-            )}
           </div>
           <div className="system-node__field-handle-col system-node__field-handle-col--right nodrag nopan pointer-events-auto">
             <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="right" type="source" />
@@ -877,14 +807,6 @@ export function FieldRow({
           </div>
         ))}
         <div className="system-node__table-cell system-node__table-cell--actions nodrag nopan">
-          {showSectionPicker && (
-            <FieldSectionSelect
-              sections={sections}
-              value={currentSectionId}
-              onChange={(sectionId) => onMoveFieldToSection(field.id, sectionId)}
-              className="system-node__field-section-select system-node__field-section-select--table nodrag nopan"
-            />
-          )}
           <button
             type="button"
             onClick={(e) => {

@@ -48,10 +48,6 @@ export function getRenderableSections(data: SystemNodeData, fields: Field[]): Re
   }));
 }
 
-export function shouldShowSectionSelect(data: SystemNodeData): boolean {
-  return getEffectiveSections(data).length > 1;
-}
-
 export function shouldShowSectionHeader(sectionCount: number): boolean {
   return sectionCount > 1;
 }

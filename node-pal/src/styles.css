@@ -979,23 +979,6 @@
   border-radius: 10px;
 }
 
-.system-node__field-section-select {
-  max-width: 92px;
-  margin-left: auto;
-  padding: 2px 4px;
-  border-radius: 6px;
-  border: 1px solid color-mix(in oklch, var(--color-border) 85%, transparent);
-  background: var(--color-background);
-  font-size: 10px;
-  color: var(--color-muted-foreground);
-}
-
-.system-node__field-section-select--table {
-  max-width: 100%;
-  width: 100%;
-  margin-bottom: 4px;
-}
-
 .system-node__table-cell--actions {
   display: flex;
   flex-direction: column;
@@ -1014,15 +997,6 @@
 .system-node__section-delete:hover {
   background: color-mix(in oklch, var(--color-destructive) 12%, transparent);
   color: var(--color-destructive);
-}
-.system-node__section-select {
-  font-size: 11px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  padding: 7px 6px;
-  background: var(--color-background);
-  color: var(--color-foreground);
-  max-width: 120px;
 }
 .system-node__section-add-btn {
   display: inline-flex;
