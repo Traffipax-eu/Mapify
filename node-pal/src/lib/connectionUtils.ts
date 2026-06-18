@@ -17,6 +17,14 @@ export const parseFieldSourceId = (handle: string) =>
 export const parseFieldTargetId = (handle: string) =>
   handle.startsWith("target-") && !handle.startsWith("parent-target") ? handle.replace("target-", "") : null;
 
+function parseFieldId(handle: string): string | null {
+  return parseFieldSourceId(handle) ?? parseFieldTargetId(handle);
+}
+
+function isParentHandle(handle: string): boolean {
+  return handle === "parent-source" || handle === "parent-target";
+}
+
 export function normalizeConnection(params: Connection): NormalizedConnection | null {
   if (!params.source || !params.target) return null;
 
@@ -34,22 +42,33 @@ export function normalizeConnection(params: Connection): NormalizedConnection | 
     targetHandle = params.sourceHandle || "";
   }
 
-  const parentReversed =
-    sourceHandle.startsWith("parent-target") && targetHandle.startsWith("parent-source");
-  if (parentReversed) {
+  if (sourceHandle === "parent-target" && targetHandle === "parent-source") {
     sourceNodeId = params.target;
     targetNodeId = params.source;
     sourceHandle = "parent-source";
     targetHandle = "parent-target";
   }
 
-  const sourceFieldId = parseFieldSourceId(sourceHandle);
-  const targetFieldId = parseFieldTargetId(targetHandle);
-  const isFieldToField = Boolean(sourceFieldId && targetFieldId);
-  const isParentToParent =
-    sourceHandle.startsWith("parent-source") && targetHandle.startsWith("parent-target");
+  const sourceFieldId = parseFieldId(sourceHandle);
+  const targetFieldId = parseFieldId(targetHandle);
+  const sourceParent = isParentHandle(sourceHandle);
+  const targetParent = isParentHandle(targetHandle);
 
-  if (!isFieldToField && !isParentToParent) return null;
+  const isFieldToField = Boolean(sourceFieldId && targetFieldId);
+  const isParentToParent = Boolean(sourceParent && targetParent && !sourceFieldId && !targetFieldId);
+  const isFieldToParent = Boolean(sourceFieldId && targetParent);
+  const isParentToField = Boolean(sourceParent && targetFieldId);
+
+  if (!isFieldToField && !isParentToParent && !isFieldToParent && !isParentToField) {
+    return null;
+  }
+
+  if (sourceParent && !sourceFieldId) {
+    sourceHandle = "parent-source";
+  }
+  if (targetParent && !targetFieldId) {
+    targetHandle = "parent-target";
+  }
 
   return {
     sourceNodeId,

@@ -45,11 +45,13 @@ export function getRenderableSections(data: SystemNodeData, fields: Field[]): Re
     .filter((section) => {
       const sectionFields = getFieldsForSection(fields, section.id);
       if (sectionFields.length > 0) return true;
-      // Never surface the implicit empty General bucket as a header-only section.
       if (section.id === DEFAULT_SECTION_ID) return false;
       return data.sections?.some((item) => item.id === section.id) ?? false;
     })
-    .map((section) => ({ ...section, showHeader: true }));
+    .map((section) => ({
+      ...section,
+      showHeader: section.id !== DEFAULT_SECTION_ID,
+    }));
 }
 
 export function shouldShowSectionSelect(data: SystemNodeData): boolean {

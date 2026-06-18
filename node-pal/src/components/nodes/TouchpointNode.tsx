@@ -20,8 +20,8 @@ function TouchpointNodeImpl({ id, data }: NodeProps<TouchpointNodeData>) {
         inLineage ? "touchpoint-node--lineage" : ""
       }`}
     >
-      <PlusHandle type="target" position={Position.Left} variant="parent" />
-      <PlusHandle type="source" position={Position.Right} variant="parent" />
+      <PlusHandle type="target" position={Position.Left} variant="parent" id="parent-target" />
+      <PlusHandle type="source" position={Position.Right} variant="parent" id="parent-source" />
       <Layers className="h-3.5 w-3.5" />
       <span className="touchpoint-node__label">{data.label}</span>
     </div>

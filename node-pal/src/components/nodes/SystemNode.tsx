@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, useState, useCallback } from "react";
-import { Handle, Position, useUpdateNodeInternals, type NodeProps } from "reactflow";
+import { Position, useUpdateNodeInternals, type NodeProps } from "reactflow";
 import {
   ChevronDown,
   ChevronRight,
@@ -27,11 +27,6 @@ import {
 } from "@/lib/nodeSections";
 import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
-import {
-  FIELD_CONNECTION_MIME,
-  parseFieldConnectionDrag,
-  serializeFieldConnectionDrag,
-} from "@/lib/fieldConnectionDnD";
 import { SmartHoverAttributes } from "@/components/SmartHoverAttributes";
 import { PlusHandle } from "./PlusHandle";
 
@@ -63,7 +58,7 @@ export type SystemNodeData = {
 
 function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeData>) {
   const data: SystemNodeData = rawData ?? { label: "System" };
-  const { schema, onUpdateNodeData, onDeleteNode, onFieldSelect, onDeleteField, onFieldConnectDrop } =
+  const { schema, onUpdateNodeData, onDeleteNode, onFieldSelect, onDeleteField } =
     useNodeCanvas();
   const updateNodeInternals = useUpdateNodeInternals();
   const { hasLineage, lineageNodeIds, activeFieldIdsByNode, impactNodeIds, anchorNodeId, highlightedNodeIds } =
@@ -238,7 +233,6 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           isFaded={fieldLineageActive && !activeFieldIds.has(field.id)}
           onFieldSelect={onFieldSelect}
           onDeleteField={onDeleteField}
-          onFieldConnectDrop={onFieldConnectDrop}
         />
       ))}
     </div>
@@ -303,6 +297,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
         className={`system-node__header system-node__header--pro ${collapsed ? "system-node__header--collapsed" : ""}`}
         style={{ ["--block-accent" as string]: accentColor } as React.CSSProperties}
       >
+        <div className="system-node__accent" aria-hidden />
         <PlusHandle
           type="target"
           position={Position.Left}
@@ -383,6 +378,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
 
               return (
                 <div key={section.id} className="system-node__section">
+                  {section.showHeader && (
                   <div className="system-node__section-header">
                     {isEditingSection ? (
                       <input
@@ -424,6 +420,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                       </button>
                     )}
                   </div>
+                  )}
 
                   {renderFieldList(sectionFields)}
                 </div>
@@ -506,28 +503,24 @@ type FieldRowProps = {
   isFaded: boolean;
   onFieldSelect: (nodeId: string, fieldId: string) => void;
   onDeleteField: (nodeId: string, fieldId: string) => void;
-  onFieldConnectDrop: (
-    source: { nodeId: string; fieldId: string },
-    target: { nodeId: string; fieldId: string },
-  ) => void;
 };
 
 function FieldConnectionAnchors({ fieldId }: { fieldId: string }) {
   return (
     <>
-      <Handle
+      <PlusHandle
         type="target"
         position={Position.Left}
         id={`target-${fieldId}`}
-        isConnectable={false}
-        className="field-connection-anchor field-connection-anchor--left"
+        variant="field"
+        className="field-handle field-handle--left"
       />
-      <Handle
+      <PlusHandle
         type="source"
         position={Position.Right}
         id={`source-${fieldId}`}
-        isConnectable={false}
-        className="field-connection-anchor field-connection-anchor--right"
+        variant="field"
+        className="field-handle field-handle--right"
       />
     </>
   );
@@ -544,57 +537,9 @@ export function FieldRow({
   isFaded,
   onFieldSelect,
   onDeleteField,
-  onFieldConnectDrop,
 }: FieldRowProps) {
-  const dragStartedRef = useRef(false);
-
-  const handleDragStart = (e: React.DragEvent) => {
-    e.stopPropagation();
-    dragStartedRef.current = true;
-    e.dataTransfer.setData(
-      FIELD_CONNECTION_MIME,
-      serializeFieldConnectionDrag({
-        kind: "field-connection",
-        sourceNodeId: nodeId,
-        sourceFieldId: field.id,
-      }),
-    );
-    e.dataTransfer.effectAllowed = "link";
-
-    const ghost = document.createElement("div");
-    ghost.className = "field-drag-ghost";
-    ghost.textContent = field.label;
-    document.body.appendChild(ghost);
-    e.dataTransfer.setDragImage(ghost, 12, 16);
-    window.setTimeout(() => ghost.remove(), 0);
-  };
-
-  const handleDragEnd = () => {
-    window.setTimeout(() => {
-      dragStartedRef.current = false;
-    }, 0);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = "link";
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const source = parseFieldConnectionDrag(e.dataTransfer.getData(FIELD_CONNECTION_MIME));
-    if (!source) return;
-    onFieldConnectDrop(
-      { nodeId: source.sourceNodeId, fieldId: source.sourceFieldId },
-      { nodeId, fieldId: field.id },
-    );
-  };
-
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (dragStartedRef.current) return;
     onFieldSelect(nodeId, field.id);
   };
 
@@ -610,11 +555,6 @@ export function FieldRow({
       >
       <div
         className="system-node__field-list-item-inner"
-        draggable
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
         onClick={handleClick}
       >
         <FieldConnectionAnchors fieldId={field.id} />
@@ -634,11 +574,6 @@ export function FieldRow({
     <div
       className="system-node__table-row-inner"
       style={tableGridStyle}
-      draggable
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
       onClick={handleClick}
     >
       <FieldConnectionAnchors fieldId={field.id} />

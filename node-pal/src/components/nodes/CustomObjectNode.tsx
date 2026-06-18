@@ -32,15 +32,27 @@ function CustomObjectNodeImpl({ id, data: rawData, selected }: NodeProps<CustomO
       className={`custom-object-node ${selected ? "custom-object-node--selected" : ""}`}
       style={{ "--object-accent": accent } as React.CSSProperties}
     >
-      <PlusHandle type="target" position={Position.Left} variant="parent" id="parent-target" />
-      <PlusHandle type="source" position={Position.Right} variant="parent" id="parent-source" />
-
       <SmartHoverAttributes
         title={data.label}
         metadata={data.metadata}
         properties={nodeProperties}
         className="custom-object-node__card nodrag nopan"
       >
+        <PlusHandle
+          type="target"
+          position={Position.Top}
+          id="parent-target"
+          variant="ghost"
+          className="custom-object-node__drop-handle"
+        />
+        <PlusHandle
+          type="source"
+          position={Position.Top}
+          id="parent-source"
+          variant="ghost"
+          className="custom-object-node__drop-handle custom-object-node__drop-handle--source"
+        />
+
         <div className="custom-object-node__icon-wrap nodrag nopan" aria-hidden>
           <Icon className="custom-object-node__icon" />
         </div>

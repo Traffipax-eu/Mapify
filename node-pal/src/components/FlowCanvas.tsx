@@ -36,6 +36,7 @@ import { MetadataSidebar } from "./MetadataSidebar";
 import { EdgeSettingsPanel, applyConnectionSettingsToEdge } from "./EdgeSettingsPanel";
 import { SchemaEditorSidebar } from "./SchemaEditorSidebar";
 import { GlossaryView } from "./GlossaryView";
+import { GuideView } from "./GuideView";
 import { CustomEdge } from "./edges/CustomEdge";
 import { ClearCanvasDialog } from "./ClearCanvasDialog";
 import { EncryptionModal, type EncryptionModalMode } from "./EncryptionModal";
@@ -49,6 +50,7 @@ import {
   X,
   LayoutGrid,
   BookOpen,
+  CircleHelp,
   PenTool,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -148,7 +150,7 @@ function InnerCanvas() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [schemaEditorGroupId, setSchemaEditorGroupId] = useState<string | null>(null);
   const [schemaEditorCustomObjectId, setSchemaEditorCustomObjectId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<"canvas" | "glossary">("canvas");
+  const [activeView, setActiveView] = useState<"canvas" | "glossary" | "guide">("canvas");
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -490,15 +492,7 @@ function InnerCanvas() {
   const onConnect = useCallback(
     (params: Connection) => {
       const conn = normalizeConnection(params);
-      if (!conn) {
-        toast.error("Connect parent containers only — use drag-and-drop for field rows");
-        return;
-      }
-
-      if (conn.isFieldToField) {
-        return;
-      }
-
+      if (!conn) return;
       createEdgeFromConnection(conn);
     },
     [createEdgeFromConnection],
@@ -683,7 +677,6 @@ function InnerCanvas() {
           nodeGroupId: item.id,
           icon: item.icon || "database",
           color: item.color,
-          sections: [{ id: `sec_${Date.now()}`, name: "General" }],
           fields: [],
           collapsed: false,
           metadata: {},
@@ -1823,6 +1816,15 @@ function InnerCanvas() {
               <BookOpen className="mr-1.5 h-3.5 w-3.5" />
               Glossary
             </Button>
+            <Button
+              variant={activeView === "guide" ? "default" : "ghost"}
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={() => setActiveView("guide")}
+            >
+              <CircleHelp className="mr-1.5 h-3.5 w-3.5" />
+              How it works
+            </Button>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -1885,6 +1887,8 @@ function InnerCanvas() {
         />
         {activeView === "glossary" ? (
           <GlossaryView nodes={nodes} schema={schema} />
+        ) : activeView === "guide" ? (
+          <GuideView />
         ) : (
         <div
           ref={wrapperRef}
