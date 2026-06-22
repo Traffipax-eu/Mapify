@@ -51,12 +51,16 @@ type Props = {
 
 function DiagramEmbedCanvasInner({ payload, className }: Props) {
   const { fitView } = useReactFlow();
+  const [nodes, setNodes] = useState<Node[]>(() => (payload.nodes ?? []) as Node[]);
   const [lineageAnchor, setLineageAnchor] = useState<{
     nodeId: string;
     fieldId?: string | null;
   } | null>(null);
 
-  const nodes = useMemo(() => (payload.nodes ?? []) as Node[], [payload.nodes]);
+  useEffect(() => {
+    setNodes((payload.nodes ?? []) as Node[]);
+  }, [payload]);
+
   const edges = useMemo(() => (payload.edges ?? []) as Edge[], [payload.edges]);
   const schema = useMemo(
     () => normalizeSchema((payload.schema as Schema | undefined) ?? DEFAULT_SCHEMA),
@@ -127,6 +131,17 @@ function DiagramEmbedCanvasInner({ payload, className }: Props) {
     setLineageAnchor(null);
   }, []);
 
+  const handleUpdateNodeData = useCallback(
+    (nodeId: string, updater: (data: SystemNodeData) => SystemNodeData) => {
+      setNodes((current) =>
+        current.map((node) =>
+          node.id === nodeId ? { ...node, data: updater(node.data as SystemNodeData) } : node,
+        ),
+      );
+    },
+    [],
+  );
+
   const nodeCanvasValue = useMemo(
     () => ({
       schema,
@@ -135,16 +150,19 @@ function DiagramEmbedCanvasInner({ payload, className }: Props) {
       lineageEdgeIds: lineage.edgeIds,
       hasLineage: lineageAnchor !== null,
       onSelectEdge: () => undefined,
-      onUpdateNodeData: () => undefined,
+      onUpdateNodeData: handleUpdateNodeData,
       onUpdateStickyNoteData: () => undefined,
       onDeleteNode: () => undefined,
       onFieldSelect: handleFieldSelect,
       onDeleteField: () => undefined,
       onFieldConnectDrop: () => undefined,
       onFieldToNodeConnectDrop: () => undefined,
+      onRenameField: () => undefined,
+      onUpdateFieldTableCell: () => undefined,
+      onApplyFieldTablePaste: () => undefined,
       onUpdateDrawingNodeData: () => undefined,
     }),
-    [schema, edges, lineage.edgeIds, lineageAnchor, handleFieldSelect],
+    [schema, edges, lineage.edgeIds, lineageAnchor, handleFieldSelect, handleUpdateNodeData],
   );
 
   useEffect(() => {
@@ -157,7 +175,16 @@ function DiagramEmbedCanvasInner({ payload, className }: Props) {
       }, 50);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [fitView, nodes.length, edges.length]);
+  }, [fitView, nodes, edges.length]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      postEmbedHeight(
+        Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, 480),
+      );
+    }, 120);
+    return () => window.clearTimeout(timeoutId);
+  }, [nodes]);
 
   return (
     <NodeCanvasProvider value={nodeCanvasValue}>
