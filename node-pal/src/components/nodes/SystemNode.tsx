@@ -9,11 +9,9 @@ import {
   Pencil,
   Plus,
   Settings,
-  Table2,
   Trash2,
   X,
 } from "lucide-react";
-import { toast } from "sonner";
 import type { MetadataValues } from "@/lib/storage";
 import { useLineage } from "@/contexts/LineageContext";
 import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
@@ -25,8 +23,7 @@ import {
 } from "@/lib/fieldMetadata";
 import { BlockInternalFieldLinks } from "@/components/nodes/BlockInternalFieldLinks";
 import { EditableFieldTable } from "@/components/nodes/EditableFieldTable";
-import { TableExcelImportBar } from "@/components/nodes/TableExcelImportBar";
-import { buildTablePastePlan, parseTabularClipboard } from "@/lib/tableClipboard";
+import { buildTablePastePlan, parseTabularClipboard, type TablePasteMode } from "@/lib/tableClipboard";
 import {
   countFieldsInGroup,
   countFieldsInSection,
@@ -69,6 +66,18 @@ import {
 } from "@/lib/fieldReorderDnD";
 import { SmartHoverAttributes } from "@/components/SmartHoverAttributes";
 import { PlusHandle } from "./PlusHandle";
+
+type PasteTarget = {
+  sectionId: string;
+  groupId?: string;
+  fieldIndex?: number;
+};
+
+function isInteractivePasteClick(target: EventTarget | null) {
+  return !!(target as HTMLElement | null)?.closest?.(
+    "button, input, .react-flow__handle, .field-handle",
+  );
+}
 
 export type Field = {
   id: string;
@@ -178,6 +187,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const [groupNameDraft, setGroupNameDraft] = useState("");
   const [sectionDropTargetId, setSectionDropTargetId] = useState<string | null>(null);
   const [groupDropTargetId, setGroupDropTargetId] = useState<string | null>(null);
+  const [pasteTarget, setPasteTarget] = useState<PasteTarget | null>(null);
 
   useEffect(() => {
     if (!sections.some((section) => section.id === addFieldSectionId)) {
@@ -217,39 +227,48 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     refreshNodeLayout();
   };
 
-  const importFromExcel = useCallback(
-    async (merge = false) => {
-      const targetSection = addFieldSectionId || sections[0]?.id || DEFAULT_SECTION_ID;
-      if (!tableExpanded) {
-        update((d) => ({ ...d, tableExpanded: true }));
-        refreshNodeLayout();
-      }
+  const selectPasteTarget = useCallback((sectionId: string, groupId?: string, fieldIndex?: number) => {
+    setAddFieldSectionId(sectionId);
+    setAddFieldGroupId(groupId);
+    setPasteTarget({ sectionId, groupId, fieldIndex });
+  }, []);
 
-      try {
-        const text = await navigator.clipboard.readText();
-        const grid = parseTabularClipboard(text);
-        if (grid.length === 0) {
-          toast.error("Clipboard is empty. Copy rows from Excel first.");
-          return;
-        }
+  const isActivePasteTarget = useCallback(
+    (sectionId: string, groupId?: string, fieldIndex?: number) => {
+      if (!pasteTarget) return false;
+      if (pasteTarget.sectionId !== sectionId) return false;
+      if ((pasteTarget.groupId ?? undefined) !== groupId) return false;
+      if (fieldIndex !== undefined) return pasteTarget.fieldIndex === fieldIndex;
+      return pasteTarget.fieldIndex === undefined;
+    },
+    [pasteTarget],
+  );
 
-        const sectionFields = getFieldsForGroup(fields, targetSection, addFieldGroupId ?? null);
-        const anchor = {
-          fieldIndex: merge ? 0 : sectionFields.length,
-          columnKey: "label" as const,
-        };
-        const plan = buildTablePastePlan(
-          grid,
-          sectionFields,
-          tableColumns,
-          anchor,
-          merge ? "merge" : "append",
-        );
-        if (plan.updates.length === 0 && plan.newFields.length === 0) return;
-        onApplyFieldTablePaste(id, targetSection, addFieldGroupId, plan);
-      } catch {
-        toast.error("Could not read clipboard. Copy from Excel, then click Paste from Excel.");
-      }
+  const handlePasteAtTarget = useCallback(
+    (event: React.ClipboardEvent) => {
+      const text = event.clipboardData.getData("text/plain");
+      const grid = parseTabularClipboard(text);
+      if (grid.length === 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const targetSection = pasteTarget?.sectionId ?? addFieldSectionId ?? sections[0]?.id ?? DEFAULT_SECTION_ID;
+      const targetGroup = pasteTarget?.groupId ?? addFieldGroupId;
+      const sectionFields = getFieldsForGroup(fields, targetSection, targetGroup ?? null);
+      const mode: TablePasteMode = event.shiftKey ? "merge" : "append";
+      const anchorFieldIndex =
+        mode === "merge" ? (pasteTarget?.fieldIndex ?? 0) : sectionFields.length;
+
+      const plan = buildTablePastePlan(
+        grid,
+        sectionFields,
+        tableColumns,
+        { fieldIndex: anchorFieldIndex, columnKey: "label" },
+        mode,
+      );
+      if (plan.updates.length === 0 && plan.newFields.length === 0) return;
+      onApplyFieldTablePaste(id, targetSection, targetGroup, plan);
     },
     [
       addFieldGroupId,
@@ -257,13 +276,15 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
       fields,
       id,
       onApplyFieldTablePaste,
-      refreshNodeLayout,
+      pasteTarget,
       sections,
       tableColumns,
-      tableExpanded,
-      update,
     ],
   );
+
+  const focusPasteZone = (event: React.MouseEvent<HTMLElement>) => {
+    event.currentTarget.focus({ preventScroll: true });
+  };
 
   const addField = () => {
     const value = newField.trim();
@@ -485,7 +506,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
 
     return (
       <div className="system-node__field-list">
-        {sectionFields.map((field) => (
+        {sectionFields.map((field, fieldIndex) => (
           <FieldRow
             key={field.id}
             nodeId={id}
@@ -496,10 +517,13 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
             fieldProperties={fieldAttributeDefinitions}
             isActive={activeFieldIds.has(field.id)}
             isFaded={fieldLineageActive && !activeFieldIds.has(field.id)}
+            isPasteTarget={isActivePasteTarget(sectionId, groupId, fieldIndex)}
             onFieldSelect={onFieldSelect}
             onDeleteField={onDeleteField}
             onFieldReorder={reorderFields}
             onFieldConnectDrop={onFieldConnectDrop}
+            onSelectPasteTarget={() => selectPasteTarget(sectionId, groupId, fieldIndex)}
+            onPaste={handlePasteAtTarget}
           />
         ))}
       </div>
@@ -605,18 +629,6 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
             <button
               type="button"
               onPointerDown={stopPointer}
-              onClick={(e) => {
-                e.stopPropagation();
-                void importFromExcel(false);
-              }}
-              className="system-node__excel-toggle nodrag nopan"
-              title="Paste fields from Excel (opens table view)"
-            >
-              <Table2 className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onPointerDown={stopPointer}
               onClick={toggleTableExpanded}
               className="system-node__table-toggle nodrag nopan"
               title={tableExpanded ? "Collapse field table" : "Expand field table"}
@@ -654,13 +666,6 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           <div
             className={`system-node__body nodrag nopan flex flex-col gap-1 overflow-visible pb-2 ${fields.length === 0 ? "system-node__body--empty" : ""}`}
           >
-          {!tableExpanded && (
-            <TableExcelImportBar
-              compact
-              onPasteFromExcel={() => importFromExcel(false)}
-              onPasteMerge={() => importFromExcel(true)}
-            />
-          )}
           <div className="system-node__sections">
             {renderableSections.map((section) => {
               const sectionFields = getFieldsForSection(fields, section.id);
@@ -687,7 +692,15 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                     <div
                       className={`system-node__section-header ${
                         section.showHeader ? "" : "system-node__section-header--minimal"
-                      }`}
+                      } ${isActivePasteTarget(section.id) ? "is-paste-target" : ""}`}
+                      tabIndex={-1}
+                      onPaste={handlePasteAtTarget}
+                      onClick={(event) => {
+                        if (isInteractivePasteClick(event.target)) return;
+                        selectPasteTarget(section.id);
+                        focusPasteZone(event);
+                      }}
+                      title="Click, then Ctrl+V to paste from Excel"
                     >
                       <button
                         type="button"
@@ -770,13 +783,35 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                   )}
 
                   {!sectionCollapsed && (
-                    <div className="system-node__section-body">
+                    <div
+                      className="system-node__section-body"
+                      tabIndex={-1}
+                      onPaste={handlePasteAtTarget}
+                      onClick={(event) => {
+                        if (isInteractivePasteClick(event.target)) return;
+                        selectPasteTarget(section.id);
+                        focusPasteZone(event);
+                      }}
+                    >
                       {ungroupedFields.length === 0 && sectionGroups.length === 0 ? (
                         tableExpanded ? (
                           renderFieldList([], section.id)
                         ) : (
-                        <div className="system-node__section-empty nodrag nopan">
-                          No fields yet — add below or Alt+drag fields here
+                        <div
+                          className={`system-node__section-empty nodrag nopan ${
+                            isActivePasteTarget(section.id) ? "is-paste-target" : ""
+                          }`}
+                          tabIndex={-1}
+                          onPaste={handlePasteAtTarget}
+                          onPointerDown={stopPointer}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            selectPasteTarget(section.id);
+                            focusPasteZone(event);
+                          }}
+                          title="Click, then Ctrl+V to paste from Excel"
+                        >
+                          No fields yet — click here and Ctrl+V to paste from Excel
                         </div>
                         )
                       ) : (
@@ -800,7 +835,19 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                             onDragLeave={() => setGroupDropTargetId(null)}
                             onDrop={(event) => handleGroupDrop(event, section.id, group.id)}
                           >
-                            <div className="system-node__group-header">
+                            <div
+                              className={`system-node__group-header ${
+                                isActivePasteTarget(section.id, group.id) ? "is-paste-target" : ""
+                              }`}
+                              tabIndex={-1}
+                              onPaste={handlePasteAtTarget}
+                              onClick={(event) => {
+                                if (isInteractivePasteClick(event.target)) return;
+                                selectPasteTarget(section.id, group.id);
+                                focusPasteZone(event);
+                              }}
+                              title="Click, then Ctrl+V to paste from Excel"
+                            >
                               <button
                                 type="button"
                                 onClick={(e) => handleToggleGroupCollapsed(group.id, e)}
@@ -859,13 +906,35 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                             </div>
 
                             {!groupCollapsed && (
-                              <div className="system-node__group-body">
+                              <div
+                                className="system-node__group-body"
+                                tabIndex={-1}
+                                onPaste={handlePasteAtTarget}
+                                onClick={(event) => {
+                                  if (isInteractivePasteClick(event.target)) return;
+                                  selectPasteTarget(section.id, group.id);
+                                  focusPasteZone(event);
+                                }}
+                              >
                                 {groupFields.length === 0 ? (
                                   tableExpanded ? (
                                     renderFieldList([], section.id, group.id)
                                   ) : (
-                                  <div className="system-node__group-empty nodrag nopan">
-                                    No fields yet — add below or Alt+drag fields here
+                                  <div
+                                    className={`system-node__group-empty nodrag nopan ${
+                                      isActivePasteTarget(section.id, group.id) ? "is-paste-target" : ""
+                                    }`}
+                                    tabIndex={-1}
+                                    onPaste={handlePasteAtTarget}
+                                    onPointerDown={stopPointer}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      selectPasteTarget(section.id, group.id);
+                                      focusPasteZone(event);
+                                    }}
+                                    title="Click, then Ctrl+V to paste from Excel"
+                                  >
+                                    No fields yet — click here and Ctrl+V to paste from Excel
                                   </div>
                                   )
                                 ) : (
@@ -941,6 +1010,7 @@ type FieldRowProps = {
   fieldProperties: ReturnType<typeof getFieldAttributeDefinitions>;
   isActive: boolean;
   isFaded: boolean;
+  isPasteTarget?: boolean;
   onFieldSelect: (nodeId: string, fieldId: string) => void;
   onDeleteField: (nodeId: string, fieldId: string) => void;
   onFieldReorder: (sourceFieldId: string, targetFieldId: string) => void;
@@ -948,6 +1018,8 @@ type FieldRowProps = {
     source: { nodeId: string; fieldId: string },
     target: { nodeId: string; fieldId: string },
   ) => void;
+  onSelectPasteTarget?: () => void;
+  onPaste?: (event: React.ClipboardEvent) => void;
 };
 
 function FieldConnectionHandle({
@@ -984,10 +1056,13 @@ export function FieldRow({
   fieldProperties,
   isActive,
   isFaded,
+  isPasteTarget = false,
   onFieldSelect,
   onDeleteField,
   onFieldReorder,
   onFieldConnectDrop,
+  onSelectPasteTarget,
+  onPaste,
 }: FieldRowProps) {
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isConnectTarget, setIsConnectTarget] = useState(false);
@@ -997,6 +1072,8 @@ export function FieldRow({
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (dragStartedRef.current) return;
+    onSelectPasteTarget?.();
+    (e.currentTarget as HTMLElement).focus({ preventScroll: true });
     onFieldSelect(nodeId, field.id);
   };
 
@@ -1108,7 +1185,9 @@ export function FieldRow({
         title={field.label}
         metadata={field.metadata}
         properties={fieldProperties}
-        className={`system-node__field-list-item nodrag nopan ${rowStateClass}`}
+        className={`system-node__field-list-item nodrag nopan ${rowStateClass} ${
+          isPasteTarget ? "is-paste-target" : ""
+        }`}
       >
         <div
           className="system-node__field-row-outer nodrag nopan"
@@ -1123,11 +1202,14 @@ export function FieldRow({
           <div
             className="system-node__field-list-item-inner nodrag nopan"
             draggable
+            tabIndex={-1}
+            onPaste={onPaste}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onClick={handleClick}
+            title="Click, then Ctrl+V to paste from Excel"
           >
             <span className="system-node__field-name">{field.label}</span>
           </div>

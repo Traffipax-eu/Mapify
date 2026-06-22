@@ -35,8 +35,6 @@ import {
   type TableColumnKey,
   type TablePasteMode,
 } from "@/lib/tableClipboard";
-import { TableExcelImportBar } from "@/components/nodes/TableExcelImportBar";
-import { toast } from "sonner";
 
 type EditingCell = TableCellAddress;
 
@@ -326,23 +324,6 @@ export function EditableFieldTable({
     [anchorCell, columns, fields, groupId, nodeId, onApplyTablePaste, sectionId],
   );
 
-  const pasteFromClipboard = useCallback(
-    async (merge = false) => {
-      try {
-        const text = await navigator.clipboard.readText();
-        const grid = parseTabularClipboard(text);
-        if (grid.length === 0) {
-          toast.error("Clipboard is empty. Copy rows from Excel first.");
-          return;
-        }
-        applyClipboardGrid(grid, merge ? "merge" : "append");
-      } catch {
-        toast.error("Could not read clipboard. Copy from Excel, then try again.");
-      }
-    },
-    [applyClipboardGrid],
-  );
-
   const handlePaste = useCallback(
     (event: React.ClipboardEvent) => {
       const text = event.clipboardData.getData("text/plain");
@@ -400,7 +381,7 @@ export function EditableFieldTable({
           setAnchorCell({ fieldIndex, columnKey });
           startEditing(fieldIndex, columnKey, editValue);
         }}
-        title="Click to edit. Ctrl+V pastes rows as new fields. Shift+Ctrl+V merges into existing rows."
+        title="Click to edit. Ctrl+V pastes from Excel. Shift+Ctrl+V merges into existing rows."
       >
         {displayValue || "—"}
       </button>
@@ -410,12 +391,15 @@ export function EditableFieldTable({
   if (fields.length === 0) {
     return (
       <div
-        className="system-node__table system-node__table--editable nodrag nopan"
+        className="system-node__table system-node__table--editable system-node__table--paste-target nodrag nopan"
         tabIndex={0}
         onPaste={handlePaste}
         onFocus={() => setAnchorCell({ fieldIndex: 0, columnKey: "label" })}
+        title="Click here, then Ctrl+V to paste from Excel"
       >
-        <TableExcelImportBar onPasteFromExcel={() => pasteFromClipboard(false)} />
+        <p className="system-node__table-empty-hint nodrag nopan">
+          Click here and Ctrl+V to paste rows from Excel.
+        </p>
       </div>
     );
   }
@@ -427,10 +411,6 @@ export function EditableFieldTable({
       onPaste={handlePaste}
       onPointerDown={stopBubble}
     >
-      <TableExcelImportBar
-        onPasteFromExcel={() => pasteFromClipboard(false)}
-        onPasteMerge={() => pasteFromClipboard(true)}
-      />
       <div
         className="system-node__field-row-outer system-node__field-row-outer--table system-node__table-header-row"
         style={fullTableGridStyle}
