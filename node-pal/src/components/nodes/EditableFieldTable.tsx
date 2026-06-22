@@ -33,7 +33,10 @@ import {
   parseTabularClipboard,
   type TableCellAddress,
   type TableColumnKey,
+  type TablePasteMode,
 } from "@/lib/tableClipboard";
+import { TableExcelImportBar } from "@/components/nodes/TableExcelImportBar";
+import { toast } from "sonner";
 
 type EditingCell = TableCellAddress;
 
@@ -312,6 +315,34 @@ export function EditableFieldTable({
     setEditingCell(null);
   }, []);
 
+  const applyClipboardGrid = useCallback(
+    (grid: string[][], mode: TablePasteMode) => {
+      if (grid.length === 0) return;
+      const plan = buildTablePastePlan(grid, fields, columns, anchorCell, mode);
+      if (plan.updates.length === 0 && plan.newFields.length === 0) return;
+      onApplyTablePaste(nodeId, sectionId, groupId, plan);
+      setEditingCell(null);
+    },
+    [anchorCell, columns, fields, groupId, nodeId, onApplyTablePaste, sectionId],
+  );
+
+  const pasteFromClipboard = useCallback(
+    async (merge = false) => {
+      try {
+        const text = await navigator.clipboard.readText();
+        const grid = parseTabularClipboard(text);
+        if (grid.length === 0) {
+          toast.error("Clipboard is empty. Copy rows from Excel first.");
+          return;
+        }
+        applyClipboardGrid(grid, merge ? "merge" : "append");
+      } catch {
+        toast.error("Could not read clipboard. Copy from Excel, then try again.");
+      }
+    },
+    [applyClipboardGrid],
+  );
+
   const handlePaste = useCallback(
     (event: React.ClipboardEvent) => {
       const text = event.clipboardData.getData("text/plain");
@@ -322,13 +353,9 @@ export function EditableFieldTable({
       event.stopPropagation();
 
       const mode = event.shiftKey ? "merge" : "append";
-      const plan = buildTablePastePlan(grid, fields, columns, anchorCell, mode);
-      if (plan.updates.length === 0 && plan.newFields.length === 0) return;
-
-      onApplyTablePaste(nodeId, sectionId, groupId, plan);
-      setEditingCell(null);
+      applyClipboardGrid(grid, mode);
     },
-    [anchorCell, columns, fields, groupId, nodeId, onApplyTablePaste, sectionId],
+    [applyClipboardGrid],
   );
 
   const renderCell = (field: Field, fieldIndex: number, columnKey: TableColumnKey) => {
@@ -388,9 +415,7 @@ export function EditableFieldTable({
         onPaste={handlePaste}
         onFocus={() => setAnchorCell({ fieldIndex: 0, columnKey: "label" })}
       >
-        <p className="system-node__table-empty-hint nodrag nopan">
-          Ctrl+V: paste Excel rows as new fields (one row = one field). Shift+Ctrl+V: merge into existing rows.
-        </p>
+        <TableExcelImportBar onPasteFromExcel={() => pasteFromClipboard(false)} />
       </div>
     );
   }
@@ -402,6 +427,10 @@ export function EditableFieldTable({
       onPaste={handlePaste}
       onPointerDown={stopBubble}
     >
+      <TableExcelImportBar
+        onPasteFromExcel={() => pasteFromClipboard(false)}
+        onPasteMerge={() => pasteFromClipboard(true)}
+      />
       <div
         className="system-node__field-row-outer system-node__field-row-outer--table system-node__table-header-row"
         style={fullTableGridStyle}

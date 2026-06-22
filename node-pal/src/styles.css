@@ -1274,6 +1274,74 @@
   outline-offset: 2px;
   border-radius: 8px;
 }
+.system-node__excel-import {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 8px 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed color-mix(in oklch, var(--color-primary) 40%, var(--color-border));
+  background: color-mix(in oklch, var(--color-primary) 6%, var(--color-card));
+}
+.system-node__excel-import--compact {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 4px 6px;
+  padding: 6px 8px;
+}
+.system-node__excel-import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in oklch, var(--color-primary) 45%, var(--color-border));
+  background: var(--color-card);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-foreground);
+  cursor: pointer;
+}
+.system-node__excel-import-btn:hover {
+  background: color-mix(in oklch, var(--color-primary) 10%, var(--color-card));
+  border-color: color-mix(in oklch, var(--color-primary) 60%, var(--color-border));
+}
+.system-node__excel-import-hint {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--color-muted-foreground);
+}
+.system-node__excel-import-merge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-muted-foreground);
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+}
+.system-node__excel-import-merge:hover {
+  color: var(--color-foreground);
+  background: color-mix(in oklch, var(--color-muted) 40%, transparent);
+}
+.system-node__excel-toggle,
+.system-node__header--colored .system-node__excel-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in oklch, white 25%, transparent);
+  background: color-mix(in oklch, white 12%, transparent);
+  color: inherit;
+}
+.system-node__excel-toggle:hover {
+  background: color-mix(in oklch, white 22%, transparent);
+}
 .system-node__table-cell--actions {
   justify-content: flex-end;
   gap: 2px;

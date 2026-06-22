@@ -9,9 +9,11 @@ import {
   Pencil,
   Plus,
   Settings,
+  Table2,
   Trash2,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { MetadataValues } from "@/lib/storage";
 import { useLineage } from "@/contexts/LineageContext";
 import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
@@ -23,6 +25,8 @@ import {
 } from "@/lib/fieldMetadata";
 import { BlockInternalFieldLinks } from "@/components/nodes/BlockInternalFieldLinks";
 import { EditableFieldTable } from "@/components/nodes/EditableFieldTable";
+import { TableExcelImportBar } from "@/components/nodes/TableExcelImportBar";
+import { buildTablePastePlan, parseTabularClipboard } from "@/lib/tableClipboard";
 import {
   countFieldsInGroup,
   countFieldsInSection,
@@ -212,6 +216,54 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     update((d) => ({ ...d, tableExpanded: !d.tableExpanded }));
     refreshNodeLayout();
   };
+
+  const importFromExcel = useCallback(
+    async (merge = false) => {
+      const targetSection = addFieldSectionId || sections[0]?.id || DEFAULT_SECTION_ID;
+      if (!tableExpanded) {
+        update((d) => ({ ...d, tableExpanded: true }));
+        refreshNodeLayout();
+      }
+
+      try {
+        const text = await navigator.clipboard.readText();
+        const grid = parseTabularClipboard(text);
+        if (grid.length === 0) {
+          toast.error("Clipboard is empty. Copy rows from Excel first.");
+          return;
+        }
+
+        const sectionFields = getFieldsForGroup(fields, targetSection, addFieldGroupId ?? null);
+        const anchor = {
+          fieldIndex: merge ? 0 : sectionFields.length,
+          columnKey: "label" as const,
+        };
+        const plan = buildTablePastePlan(
+          grid,
+          sectionFields,
+          tableColumns,
+          anchor,
+          merge ? "merge" : "append",
+        );
+        if (plan.updates.length === 0 && plan.newFields.length === 0) return;
+        onApplyFieldTablePaste(id, targetSection, addFieldGroupId, plan);
+      } catch {
+        toast.error("Could not read clipboard. Copy from Excel, then click Paste from Excel.");
+      }
+    },
+    [
+      addFieldGroupId,
+      addFieldSectionId,
+      fields,
+      id,
+      onApplyFieldTablePaste,
+      refreshNodeLayout,
+      sections,
+      tableColumns,
+      tableExpanded,
+      update,
+    ],
+  );
 
   const addField = () => {
     const value = newField.trim();
@@ -553,6 +605,18 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
             <button
               type="button"
               onPointerDown={stopPointer}
+              onClick={(e) => {
+                e.stopPropagation();
+                void importFromExcel(false);
+              }}
+              className="system-node__excel-toggle nodrag nopan"
+              title="Paste fields from Excel (opens table view)"
+            >
+              <Table2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onPointerDown={stopPointer}
               onClick={toggleTableExpanded}
               className="system-node__table-toggle nodrag nopan"
               title={tableExpanded ? "Collapse field table" : "Expand field table"}
@@ -590,6 +654,13 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           <div
             className={`system-node__body nodrag nopan flex flex-col gap-1 overflow-visible pb-2 ${fields.length === 0 ? "system-node__body--empty" : ""}`}
           >
+          {!tableExpanded && (
+            <TableExcelImportBar
+              compact
+              onPasteFromExcel={() => importFromExcel(false)}
+              onPasteMerge={() => importFromExcel(true)}
+            />
+          )}
           <div className="system-node__sections">
             {renderableSections.map((section) => {
               const sectionFields = getFieldsForSection(fields, section.id);
