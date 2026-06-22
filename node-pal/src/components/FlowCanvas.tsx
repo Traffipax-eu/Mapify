@@ -1199,6 +1199,16 @@ function InnerCanvas() {
           };
         }),
       );
+
+      const added = plan.newFields.length;
+      const updated = plan.updates.length;
+      if (added > 0 && updated > 0) {
+        toast.success(`Pasted ${added} new field${added === 1 ? "" : "s"} and updated ${updated}`);
+      } else if (added > 0) {
+        toast.success(`Added ${added} field${added === 1 ? "" : "s"} from paste`);
+      } else if (updated > 0) {
+        toast.success(`Updated ${updated} field${updated === 1 ? "" : "s"}`);
+      }
     },
     [pushUndo, schema, setNodes],
   );

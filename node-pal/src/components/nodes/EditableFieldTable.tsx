@@ -321,7 +321,8 @@ export function EditableFieldTable({
       event.preventDefault();
       event.stopPropagation();
 
-      const plan = buildTablePastePlan(grid, fields, columns, anchorCell);
+      const mode = event.shiftKey ? "merge" : "append";
+      const plan = buildTablePastePlan(grid, fields, columns, anchorCell, mode);
       if (plan.updates.length === 0 && plan.newFields.length === 0) return;
 
       onApplyTablePaste(nodeId, sectionId, groupId, plan);
@@ -372,7 +373,7 @@ export function EditableFieldTable({
           setAnchorCell({ fieldIndex, columnKey });
           startEditing(fieldIndex, columnKey, editValue);
         }}
-        title="Click to edit. Paste Excel data with Ctrl+V."
+        title="Click to edit. Ctrl+V pastes rows as new fields. Shift+Ctrl+V merges into existing rows."
       >
         {displayValue || "—"}
       </button>
@@ -388,7 +389,7 @@ export function EditableFieldTable({
         onFocus={() => setAnchorCell({ fieldIndex: 0, columnKey: "label" })}
       >
         <p className="system-node__table-empty-hint nodrag nopan">
-          Paste Excel rows here to create fields, or add below.
+          Ctrl+V: paste Excel rows as new fields (one row = one field). Shift+Ctrl+V: merge into existing rows.
         </p>
       </div>
     );

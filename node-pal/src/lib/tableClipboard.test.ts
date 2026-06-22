@@ -17,12 +17,29 @@ describe("buildTablePastePlan", () => {
   ];
   const columns = [{ id: "type", name: "Type", scope: "group" as const }];
 
-  it("updates existing fields from a grid", () => {
+  it("appends every pasted row as a new field in append mode", () => {
+    const plan = buildTablePastePlan(
+      [["City", "TEXT"], ["Country", "CHAR"]],
+      fields,
+      columns,
+      { fieldIndex: 0, columnKey: "label" },
+      "append",
+    );
+
+    expect(plan.updates).toEqual([]);
+    expect(plan.newFields).toEqual([
+      { label: "City", metadata: { type: "TEXT" } },
+      { label: "Country", metadata: { type: "CHAR" } },
+    ]);
+  });
+
+  it("updates existing fields from a grid in merge mode", () => {
     const plan = buildTablePastePlan(
       [["Name2", "VARCHAR"], ["Age2", "INT"]],
       fields,
       columns,
       { fieldIndex: 0, columnKey: "label" },
+      "merge",
     );
 
     expect(plan.newFields).toEqual([]);
@@ -32,24 +49,26 @@ describe("buildTablePastePlan", () => {
     ]);
   });
 
-  it("creates new fields when pasted below existing rows", () => {
+  it("creates new fields when pasted below existing rows in merge mode", () => {
     const plan = buildTablePastePlan(
       [["City", "TEXT"]],
       fields,
       columns,
       { fieldIndex: 2, columnKey: "label" },
+      "merge",
     );
 
     expect(plan.updates).toEqual([]);
     expect(plan.newFields).toEqual([{ label: "City", metadata: { type: "TEXT" } }]);
   });
 
-  it("fills attribute columns when anchored on a column", () => {
+  it("fills attribute columns when anchored on a column in merge mode", () => {
     const plan = buildTablePastePlan(
       [["VARCHAR"], ["INT"]],
       fields,
       columns,
       { fieldIndex: 0, columnKey: "type" },
+      "merge",
     );
 
     expect(plan.updates).toEqual([
