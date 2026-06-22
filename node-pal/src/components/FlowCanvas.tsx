@@ -67,13 +67,15 @@ import { NodeCanvasProvider, type NodeCanvasContextValue } from "@/contexts/Node
 import { buildMarker } from "@/lib/edgeMarkers";
 import { computeLineage, decorateEdgesForDisplay } from "@/lib/lineageTraversal";
 import { sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
-import { buildFieldMetadataUpdate, getBlockFieldAttributeDefinitions } from "@/lib/fieldMetadata";
+import { buildFieldMetadataUpdate, getBlockAttributeDefinitions, getFieldAttributeDefinitions } from "@/lib/fieldMetadata";
 import {
+  getCustomObjectBlockProperties,
   getCustomObjectFieldProperties,
   getFieldProperties,
+  getGroupBlockProperties,
+  normalizeSchema,
 } from "@/lib/schemaProperties";
 import { resolveSidebarSelection } from "@/lib/sidebarSelection";
-import { normalizeSchema } from "@/lib/schemaProperties";
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
 import { createDrawingNode } from "@/lib/createDrawingNode";
 import { createContainerNode } from "@/lib/createContainerNode";
@@ -743,6 +745,7 @@ function InnerCanvas() {
       if (!pendingNodeDrop) return;
 
       const { position, item } = pendingNodeDrop;
+      const fieldSchemaAttributes = getFieldProperties(schema, item.id);
       const newNode: Node = {
         id: nextNodeId(),
         position,
@@ -755,13 +758,16 @@ function InnerCanvas() {
           fields: [],
           collapsed: false,
           metadata: {},
+          ...(fieldSchemaAttributes.length > 0
+            ? { fieldAttributeKeys: fieldSchemaAttributes.map((property) => property.id) }
+            : {}),
         },
       };
       setNodes((nds) => nds.concat(newNode));
       setPendingNodeDrop(null);
       setNodeNameDialogOpen(false);
     },
-    [pendingNodeDrop, setNodes],
+    [pendingNodeDrop, schema, setNodes],
   );
 
   const cancelNodeDrop = useCallback(() => {
@@ -1206,26 +1212,107 @@ function InnerCanvas() {
     [schema.nodeGroups, nodes, cleanupAfterNodeDelete, schemaEditorGroupId],
   );
 
-  const handleUpdateMetadata = useCallback(
-    (nodeId: string, metadata: MetadataValues) => {
-      const sanitized = sanitizeFreeformMetadata(metadata);
+  const handleUpdateBlockMetadata = useCallback(
+    (nodeId: string, metadata: MetadataValues, propertyKeys?: string[]) => {
+      const sanitizedInput = sanitizeFreeformMetadata(metadata);
+      let selectedMetadata = sanitizedInput;
 
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n;
-          const clean = stripDisplayData(n.data as Record<string, unknown>);
+          const clean = stripDisplayData(n.data as Record<string, unknown>) as SystemNodeData & {
+            objectId?: string;
+          };
+          const isCustomObject = n.type === "customObject";
+          const source = isCustomObject
+            ? {
+                objectId: clean.objectId,
+                fieldAttributeKeys: clean.fieldAttributeKeys,
+                blockMetadata: sanitizedInput,
+              }
+            : {
+                nodeGroupId: clean.nodeGroupId,
+                fieldAttributeKeys: clean.fieldAttributeKeys,
+                blockMetadata: sanitizedInput,
+              };
+          const schemaBlockProps = isCustomObject
+            ? getCustomObjectBlockProperties(schema, clean.objectId)
+            : getGroupBlockProperties(schema, clean.nodeGroupId);
+
+          const attributeDefinitions = getBlockAttributeDefinitions(
+            schema,
+            source,
+            isCustomObject ? "artifact" : "block",
+          );
+
+          selectedMetadata = buildFieldMetadataUpdate(sanitizedInput, attributeDefinitions);
+
           return {
             ...n,
             data: {
               ...clean,
-              metadata: sanitized,
+              metadata: selectedMetadata,
             },
           };
         }),
       );
-      setSelectedNodeMetadata(sanitized);
+      setSelectedNodeMetadata(selectedMetadata);
     },
-    [setNodes],
+    [setNodes, schema],
+  );
+
+  const handleUpdateBlockFieldAttributeKeys = useCallback(
+    (nodeId: string, propertyKeys: string[]) => {
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== nodeId) return n;
+          const clean = stripDisplayData(n.data as Record<string, unknown>) as SystemNodeData & {
+            objectId?: string;
+          };
+          const isCustomObject = n.type === "customObject";
+          const fields = Array.isArray(clean.fields) ? clean.fields : [];
+          const source = isCustomObject
+            ? {
+                objectId: clean.objectId,
+                fieldAttributeKeys: propertyKeys,
+                blockMetadata: clean.metadata,
+              }
+            : {
+                nodeGroupId: clean.nodeGroupId,
+                fieldAttributeKeys: propertyKeys,
+                blockMetadata: clean.metadata,
+              };
+          const schemaFieldProps = isCustomObject
+            ? getCustomObjectFieldProperties(schema, clean.objectId)
+            : getFieldProperties(schema, clean.nodeGroupId);
+
+          const attributeDefinitions = getFieldAttributeDefinitions(
+            schema,
+            source,
+            fields,
+            isCustomObject ? "artifact" : "block",
+          );
+
+          const nextData: SystemNodeData & { objectId?: string } = {
+            ...clean,
+            fields: fields.map((field) => ({
+              ...field,
+              metadata: buildFieldMetadataUpdate(field.metadata, attributeDefinitions),
+            })),
+          };
+
+          if (schemaFieldProps.length === 0 && propertyKeys.length > 0) {
+            nextData.fieldAttributeKeys = propertyKeys;
+          }
+
+          return {
+            ...n,
+            data: nextData,
+          };
+        }),
+      );
+    },
+    [setNodes, schema],
   );
 
   const handleUpdateFieldMetadata = useCallback(
@@ -1242,13 +1329,21 @@ function InnerCanvas() {
           const isCustomObject = n.type === "customObject";
           const fields = Array.isArray(clean.fields) ? clean.fields : [];
           const source = isCustomObject
-            ? { objectId: clean.objectId, fieldAttributeKeys: clean.fieldAttributeKeys }
-            : { nodeGroupId: clean.nodeGroupId, fieldAttributeKeys: clean.fieldAttributeKeys };
+            ? {
+                objectId: clean.objectId,
+                fieldAttributeKeys: clean.fieldAttributeKeys,
+                blockMetadata: clean.metadata,
+              }
+            : {
+                nodeGroupId: clean.nodeGroupId,
+                fieldAttributeKeys: clean.fieldAttributeKeys,
+                blockMetadata: clean.metadata,
+              };
           const schemaFieldProps = isCustomObject
             ? getCustomObjectFieldProperties(schema, clean.objectId)
             : getFieldProperties(schema, clean.nodeGroupId);
 
-          const attributeDefinitions = getBlockFieldAttributeDefinitions(
+          const attributeDefinitions = getFieldAttributeDefinitions(
             schema,
             source,
             fields,
@@ -2084,16 +2179,16 @@ function InnerCanvas() {
         fieldId={sidebarSelection?.fieldId ?? null}
         fieldLabel={sidebarSelection?.fieldLabel ?? null}
         metadata={sidebarSelection?.metadata ?? {}}
-        properties={sidebarSelection?.properties ?? []}
+        blockProperties={sidebarSelection?.blockProperties ?? []}
+        fieldProperties={sidebarSelection?.fieldProperties ?? []}
         selectionContext={sidebarSelectionContext}
+        lockBlockPropertyKeys={sidebarSelection?.lockBlockPropertyKeys ?? false}
         lockFieldPropertyKeys={sidebarSelection?.lockFieldPropertyKeys ?? false}
+        allowAddBlockAttributes={sidebarSelection?.allowAddBlockAttributes ?? false}
         allowAddFieldAttributes={sidebarSelection?.allowAddFieldAttributes ?? false}
-        onUpdateMetadata={
-          sidebarSelection?.fieldId
-            ? (nodeId, metadata, propertyKeys) =>
-                handleUpdateFieldMetadata(nodeId, sidebarSelection.fieldId!, metadata, propertyKeys)
-            : handleUpdateMetadata
-        }
+        onUpdateBlockMetadata={handleUpdateBlockMetadata}
+        onUpdateFieldAttributeKeys={handleUpdateBlockFieldAttributeKeys}
+        onUpdateFieldMetadata={handleUpdateFieldMetadata}
         onRenameNode={handleRenameNode}
         onRenameField={handleRenameField}
         onDeleteField={handleDeleteField}

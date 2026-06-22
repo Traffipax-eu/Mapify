@@ -49,6 +49,7 @@ export function Sidebar({
     const newGroup: NodeGroupSchema = {
       id: `ng_${Date.now()}`,
       name: `Block ${schema.nodeGroups.length + 1}`,
+      blockProperties: [],
       properties: [],
       color: PRO_ICON_COLORS.block,
     };
@@ -87,7 +88,6 @@ export function Sidebar({
           <GroupCard
             key={item.id}
             item={item}
-            globalCount={schema.globalProperties?.length ?? 0}
             onEdit={() => onOpenSchemaBuilder(item.id)}
             onDelete={() => onDeleteGroup(item.id)}
           />
@@ -148,12 +148,10 @@ export function Sidebar({
 
 function GroupCard({
   item,
-  globalCount,
   onEdit,
   onDelete,
 }: {
   item: NodeGroupSchema;
-  globalCount: number;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -185,8 +183,8 @@ function GroupCard({
         <div className="flex items-start justify-between gap-2 p-3">
           <div className="min-w-0 flex-1">
             <p className="text-xs text-slate-500">
-              {globalCount} {SCHEMA_SCOPE_LABELS.global.short} · {item.properties.length}{" "}
-              {SCHEMA_SCOPE_LABELS.group.short}
+              {item.blockProperties?.length ?? 0} {SCHEMA_SCOPE_LABELS.global.short} ·{" "}
+              {item.properties.length} {SCHEMA_SCOPE_LABELS.group.short}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-0.5">

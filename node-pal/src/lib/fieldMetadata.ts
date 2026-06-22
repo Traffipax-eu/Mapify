@@ -1,6 +1,8 @@
 import type { MetadataValues, PropertyDefinition, Schema } from "@/lib/storage";
 import {
+  getCustomObjectBlockProperties,
   getCustomObjectFieldProperties,
+  getGroupBlockProperties,
   getFieldProperties,
   type ScopedProperty,
 } from "@/lib/schemaProperties";
@@ -16,10 +18,22 @@ export type BlockFieldAttributeSource = {
   nodeGroupId?: string;
   objectId?: string;
   fieldAttributeKeys?: string[];
+  blockMetadata?: MetadataValues;
 };
 
 function isEmptyMetadataValue(value: unknown): boolean {
   return value === undefined || value === null || value === "";
+}
+
+function freeformPropertiesFromKeys(keys: Iterable<string>): ScopedProperty[] {
+  return Array.from(keys)
+    .sort((a, b) => a.localeCompare(b))
+    .map((id) => ({
+      id,
+      name: id,
+      type: "text" as const,
+      scope: "group" as const,
+    }));
 }
 
 /** Resolve a field metadata value for a schema column id or raw metadata key. */
@@ -67,8 +81,29 @@ export function resolveFieldMetadataValue(
   return undefined;
 }
 
-/** Shared field attribute definitions for every field in a block or data asset. */
-export function getBlockFieldAttributeDefinitions(
+/** Block-instance attribute definitions for one node. */
+export function getBlockAttributeDefinitions(
+  schema: Schema | null | undefined,
+  source: BlockFieldAttributeSource,
+  scope: "block" | "artifact" = "block",
+): ScopedProperty[] {
+  const scopeId = scope === "artifact" ? source.objectId : source.nodeGroupId;
+  const schemaProps =
+    scope === "artifact"
+      ? getCustomObjectBlockProperties(schema, scopeId)
+      : getGroupBlockProperties(schema, scopeId);
+  if (schemaProps.length > 0) return schemaProps;
+
+  const keys = new Set<string>();
+  for (const key of Object.keys(source.blockMetadata ?? {})) {
+    const trimmed = key.trim();
+    if (trimmed) keys.add(trimmed);
+  }
+  return freeformPropertiesFromKeys(keys);
+}
+
+/** Field attribute definitions shared by every field in a block or data asset. */
+export function getFieldAttributeDefinitions(
   schema: Schema | null | undefined,
   source: BlockFieldAttributeSource,
   fields: Array<{ metadata?: MetadataValues }>,
@@ -88,15 +123,17 @@ export function getBlockFieldAttributeDefinitions(
       if (trimmed) keys.add(trimmed);
     }
   }
+  return freeformPropertiesFromKeys(keys);
+}
 
-  return Array.from(keys)
-    .sort((a, b) => a.localeCompare(b))
-    .map((id) => ({
-      id,
-      name: id,
-      type: "text" as const,
-      scope: "group" as const,
-    }));
+/** @deprecated Use getFieldAttributeDefinitions. */
+export function getBlockFieldAttributeDefinitions(
+  schema: Schema | null | undefined,
+  source: BlockFieldAttributeSource,
+  fields: Array<{ metadata?: MetadataValues }>,
+  scope: "block" | "artifact" = "block",
+): ScopedProperty[] {
+  return getFieldAttributeDefinitions(schema, source, fields, scope);
 }
 
 export function attributeDefinitionsToTableColumns(

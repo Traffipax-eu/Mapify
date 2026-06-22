@@ -8,61 +8,101 @@ function isValidProperty(property: PropertyDefinition | null | undefined): prope
   return Boolean(property?.id);
 }
 
-/** Node-wide attributes (schema.globalProperties) — system/node level only. */
-export function getNodeGroupProperties(schema: Schema | null | undefined): ScopedProperty[] {
-  const globalProps = schema?.globalProperties;
-  const list = Array.isArray(globalProps) ? globalProps : [];
-  return list
-    .filter(isValidProperty)
-    .map((property) => ({
-      ...property,
-      name: property.name ?? "Attribute",
-      type: property.type ?? "text",
-      scope: "global" as const,
-    }));
-}
-
-/** Field-level attributes for a block — table columns and field metadata only. */
-export function getFieldProperties(schema: Schema | null | undefined, nodeGroupId?: string): ScopedProperty[] {
-  if (!nodeGroupId) return [];
-  const groupProps =
-    schema?.nodeGroups?.find((group) => group?.id === nodeGroupId)?.properties ?? [];
-  if (!Array.isArray(groupProps)) return [];
-  return groupProps.filter(isValidProperty).map((property) => ({
+function toScopedProperties(
+  properties: PropertyDefinition[] | null | undefined,
+  scope: ScopedProperty["scope"],
+): ScopedProperty[] {
+  const list = Array.isArray(properties) ? properties : [];
+  return list.filter(isValidProperty).map((property) => ({
     ...property,
     name: property.name ?? "Attribute",
     type: property.type ?? "text",
-    scope: "group" as const,
+    scope,
   }));
 }
 
-/** Field-level attributes for a data asset / custom object type. */
+/** Merge property lists; later entries override earlier ones for the same id. */
+export function mergePropertyDefinitions(
+  ...lists: Array<PropertyDefinition[] | null | undefined>
+): PropertyDefinition[] {
+  const map = new Map<string, PropertyDefinition>();
+  for (const list of lists) {
+    for (const property of list ?? []) {
+      if (!isValidProperty(property)) continue;
+      map.set(property.id, { ...map.get(property.id), ...property, id: property.id });
+    }
+  }
+  return Array.from(map.values());
+}
+
+/** @deprecated Sheet-wide block attributes; prefer per-group blockProperties. */
+export function getNodeGroupProperties(schema: Schema | null | undefined): ScopedProperty[] {
+  return toScopedProperties(schema?.globalProperties, "global");
+}
+
+function getNodeGroupRecord(schema: Schema | null | undefined, nodeGroupId?: string) {
+  if (!nodeGroupId) return null;
+  return schema?.nodeGroups?.find((group) => group?.id === nodeGroupId) ?? null;
+}
+
+function getCustomObjectRecord(schema: Schema | null | undefined, objectId?: string) {
+  if (!objectId) return null;
+  return schema?.customObjectSchemas?.find((item) => item?.id === objectId) ?? null;
+}
+
+/** Block-instance attribute definitions for one block type. */
+export function getGroupBlockProperties(
+  schema: Schema | null | undefined,
+  nodeGroupId?: string,
+): ScopedProperty[] {
+  const group = getNodeGroupRecord(schema, nodeGroupId);
+  return toScopedProperties(group?.blockProperties, "group");
+}
+
+/** Field attribute definitions for one block type. */
+export function getFieldProperties(schema: Schema | null | undefined, nodeGroupId?: string): ScopedProperty[] {
+  const group = getNodeGroupRecord(schema, nodeGroupId);
+  return toScopedProperties(group?.properties, "group");
+}
+
+/** Block-instance attributes for a custom object type. */
+export function getCustomObjectBlockProperties(
+  schema: Schema | null | undefined,
+  objectId?: string,
+): ScopedProperty[] {
+  const artifact = getCustomObjectRecord(schema, objectId);
+  return toScopedProperties(artifact?.blockProperties, "group");
+}
+
+/** Field attributes for a custom object type. */
 export function getCustomObjectFieldProperties(
   schema: Schema | null | undefined,
   objectId?: string,
 ): ScopedProperty[] {
-  if (!objectId) return [];
-  const objectProps =
-    schema?.customObjectSchemas?.find((item) => item?.id === objectId)?.properties ?? [];
-  if (!Array.isArray(objectProps)) return [];
-  return objectProps.filter(isValidProperty).map((property) => ({
-    ...property,
-    name: property.name ?? "Attribute",
-    type: property.type ?? "text",
-    scope: "group" as const,
-  }));
+  const artifact = getCustomObjectRecord(schema, objectId);
+  return toScopedProperties(artifact?.properties, "group");
 }
 
-/** Merge global + group-level properties (group overrides same id). @deprecated Prefer getNodeGroupProperties / getFieldProperties. */
+/** Combined schema defs (e.g. seeding keys on drop). */
+export function getSharedBlockAttributeDefinitions(
+  schema: Schema | null | undefined,
+  options: { nodeGroupId?: string; objectId?: string },
+): ScopedProperty[] {
+  if (options.objectId) {
+    return mergePropertyDefinitions(
+      getCustomObjectBlockProperties(schema, options.objectId),
+      getCustomObjectFieldProperties(schema, options.objectId),
+    ).map((property) => ({ ...property, scope: "group" as const }));
+  }
+  return mergePropertyDefinitions(
+    getGroupBlockProperties(schema, options.nodeGroupId),
+    getFieldProperties(schema, options.nodeGroupId),
+  ).map((property) => ({ ...property, scope: "group" as const }));
+}
+
+/** @deprecated Prefer getSharedBlockAttributeDefinitions. */
 export function getScopedProperties(schema: Schema, nodeGroupId?: string): ScopedProperty[] {
-  const map = new Map<string, ScopedProperty>();
-  for (const property of getNodeGroupProperties(schema)) {
-    map.set(property.id, property);
-  }
-  for (const property of getFieldProperties(schema, nodeGroupId)) {
-    map.set(property.id, property);
-  }
-  return Array.from(map.values());
+  return getSharedBlockAttributeDefinitions(schema, { nodeGroupId });
 }
 
 /** Keep only metadata keys that belong to the given property definitions. */
@@ -92,12 +132,14 @@ export function normalizeSchema(schema: Partial<Schema> | null | undefined): Sch
       ...group,
       id: group?.id ?? `group_${Date.now()}`,
       name: group?.name ?? "Block",
+      blockProperties: Array.isArray(group?.blockProperties) ? group.blockProperties : [],
       properties: Array.isArray(group?.properties) ? group.properties : [],
     })),
     customObjectSchemas: customObjectSchemas.map((item) => ({
       ...item,
       id: item?.id ?? `artifact_${Date.now()}`,
       name: item?.name ?? "Artifact",
+      blockProperties: Array.isArray(item?.blockProperties) ? item.blockProperties : [],
       properties: Array.isArray(item?.properties) ? item.properties : [],
     })),
     fieldTypes: Array.isArray(schema?.fieldTypes) ? schema.fieldTypes : [],

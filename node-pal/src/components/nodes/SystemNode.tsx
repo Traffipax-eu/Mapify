@@ -17,9 +17,9 @@ import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
 import {
   attributeDefinitionsToTableColumns,
   formatFieldCellValue,
-  getBlockFieldAttributeDefinitions,
+  getBlockAttributeDefinitions,
+  getFieldAttributeDefinitions,
 } from "@/lib/fieldMetadata";
-import { getNodeGroupProperties } from "@/lib/schemaProperties";
 import { BlockInternalFieldLinks } from "@/components/nodes/BlockInternalFieldLinks";
 import {
   createSection,
@@ -104,14 +104,30 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const hasImpact = impactNodeIds.has(id);
   const fieldLineageActive = hasLineage;
   const activeFieldIds = activeFieldIdsByNode.get(id) ?? new Set<string>();
+  const blockAttributeDefinitions = useMemo(
+    () =>
+      getBlockAttributeDefinitions(
+        schema,
+        {
+          nodeGroupId: data.nodeGroupId,
+          fieldAttributeKeys: data.fieldAttributeKeys,
+          blockMetadata: data.metadata,
+        },
+      ),
+    [schema, data.nodeGroupId, data.fieldAttributeKeys, data.metadata],
+  );
   const fieldAttributeDefinitions = useMemo(
     () =>
-      getBlockFieldAttributeDefinitions(
+      getFieldAttributeDefinitions(
         schema,
-        { nodeGroupId: data.nodeGroupId, fieldAttributeKeys: data.fieldAttributeKeys },
+        {
+          nodeGroupId: data.nodeGroupId,
+          fieldAttributeKeys: data.fieldAttributeKeys,
+          blockMetadata: data.metadata,
+        },
         fields,
       ),
-    [schema, data.nodeGroupId, data.fieldAttributeKeys, fields],
+    [schema, data.nodeGroupId, data.fieldAttributeKeys, data.metadata, fields],
   );
   const tableColumns = useMemo(
     () => attributeDefinitionsToTableColumns(fieldAttributeDefinitions, data.visibleColumns),
@@ -125,7 +141,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     [tableColumns],
   );
 
-  const nodeGroupProperties = getNodeGroupProperties(schema);
+  const nodeGroupProperties = blockAttributeDefinitions;
 
   const [showSettings, setShowSettings] = useState(false);
   const [newField, setNewField] = useState("");
@@ -594,7 +610,7 @@ type FieldRowProps = {
   variant: "compact" | "expanded";
   fullTableGridStyle: React.CSSProperties;
   tableColumns: ReturnType<typeof attributeDefinitionsToTableColumns>;
-  fieldProperties: ReturnType<typeof getBlockFieldAttributeDefinitions>;
+  fieldProperties: ReturnType<typeof getFieldAttributeDefinitions>;
   isActive: boolean;
   isFaded: boolean;
   onFieldSelect: (nodeId: string, fieldId: string) => void;

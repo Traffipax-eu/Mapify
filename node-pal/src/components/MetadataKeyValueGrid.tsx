@@ -18,6 +18,7 @@ type Props = {
   resetKey: string;
   lockPropertyKeys?: boolean;
   allowAddBlockAttributes?: boolean;
+  valuesReadOnly?: boolean;
   onChange: (metadata: MetadataValues, propertyKeys?: string[]) => void;
 };
 
@@ -29,6 +30,7 @@ export function MetadataKeyValueGrid({
   resetKey,
   lockPropertyKeys = false,
   allowAddBlockAttributes = false,
+  valuesReadOnly = false,
   onChange,
 }: Props) {
   const safeProperties = Array.isArray(properties) ? properties : [];
@@ -77,12 +79,12 @@ export function MetadataKeyValueGrid({
           nextRows,
           nextProperties,
         );
-        onChange(nextMetadata, propertyKeys);
+        onChange(valuesReadOnly ? {} : nextMetadata, propertyKeys);
         return;
       }
       onChange(attributeRowsToMetadata(nextRows, nextProperties));
     },
-    [lockPropertyKeys, onChange, safeProperties, useFixedRows],
+    [lockPropertyKeys, onChange, safeProperties, useFixedRows, valuesReadOnly],
   );
 
   const commitRow = useCallback(
@@ -193,6 +195,7 @@ export function MetadataKeyValueGrid({
           keysLocked={useFixedRows && Boolean(row.storageKey)}
           isDraftBlockProperty={isDraftBlockPropertyRow(row)}
           allowRemove={!useFixedRows || allowAddBlockAttributes}
+          valuesReadOnly={valuesReadOnly}
           onStartEdit={(field) => setEditing({ rowId: row.rowId, field })}
           onCommit={(patch) => commitRow(row.rowId, patch)}
           onRemove={() => removeRow(row.rowId)}
@@ -223,6 +226,7 @@ function AttributeRowEditor({
   keysLocked,
   isDraftBlockProperty,
   allowRemove,
+  valuesReadOnly = false,
   onStartEdit,
   onCommit,
   onRemove,
@@ -234,6 +238,7 @@ function AttributeRowEditor({
   keysLocked: boolean;
   isDraftBlockProperty: boolean;
   allowRemove: boolean;
+  valuesReadOnly?: boolean;
   onStartEdit: (field: "key" | "value") => void;
   onCommit: (patch: Partial<AttributeRow>) => void;
   onRemove: () => void;
@@ -242,7 +247,8 @@ function AttributeRowEditor({
   const keyInputRef = useRef<HTMLInputElement>(null);
   const valueInputRef = useRef<HTMLInputElement>(null);
   const isEditingKey = !keysLocked && editing?.rowId === row.rowId && editing.field === "key";
-  const isEditingValue = editing?.rowId === row.rowId && editing.field === "value";
+  const isEditingValue =
+    !valuesReadOnly && editing?.rowId === row.rowId && editing.field === "value";
   const [keyDraft, setKeyDraft] = useState(row.label);
   const [valueDraft, setValueDraft] = useState(row.value);
 
@@ -342,6 +348,10 @@ function AttributeRowEditor({
             className="metadata-kv-grid__input"
             placeholder="Value"
           />
+        ) : valuesReadOnly ? (
+          <span className="metadata-kv-grid__display metadata-kv-grid__display--locked metadata-kv-grid__display--muted">
+            {row.value.trim() || <span className="metadata-kv-grid__placeholder">Per field</span>}
+          </span>
         ) : (
           <button type="button" className="metadata-kv-grid__display" onClick={() => onStartEdit("value")}>
             {row.value.trim() || <span className="metadata-kv-grid__placeholder">Empty</span>}

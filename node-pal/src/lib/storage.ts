@@ -16,6 +16,9 @@ export interface NodeGroupSchema {
   name: string;
   icon?: string;
   color?: string;
+  /** Block-instance attribute definitions for this block type only. */
+  blockProperties?: PropertyDefinition[];
+  /** Shared field attribute definitions for this block type (same keys as block, values per field). */
   properties: PropertyDefinition[];
 }
 
@@ -23,6 +26,8 @@ export interface NodeGroupSchema {
 export interface CustomObjectSchema {
   id: string;
   name: string;
+  /** Block-instance attribute definitions for this asset type only. */
+  blockProperties?: PropertyDefinition[];
   properties: PropertyDefinition[];
 }
 

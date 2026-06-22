@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import type { MetadataValues } from "@/lib/storage";
 import type { ScopedProperty } from "@/lib/schemaProperties";
 import { MetadataKeyValueGrid } from "@/components/MetadataKeyValueGrid";
+import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 
 export type MetadataSelectionContext = "node" | "field";
 
@@ -17,11 +18,16 @@ interface MetadataSidebarProps {
   fieldId?: string | null;
   fieldLabel?: string | null;
   metadata?: MetadataValues | null;
-  properties?: ScopedProperty[] | null;
+  blockProperties?: ScopedProperty[] | null;
+  fieldProperties?: ScopedProperty[] | null;
   selectionContext?: MetadataSelectionContext | null;
+  lockBlockPropertyKeys?: boolean;
   lockFieldPropertyKeys?: boolean;
+  allowAddBlockAttributes?: boolean;
   allowAddFieldAttributes?: boolean;
-  onUpdateMetadata: (nodeId: string, metadata: MetadataValues, propertyKeys?: string[]) => void;
+  onUpdateBlockMetadata: (nodeId: string, metadata: MetadataValues, propertyKeys?: string[]) => void;
+  onUpdateFieldAttributeKeys: (nodeId: string, propertyKeys: string[]) => void;
+  onUpdateFieldMetadata: (nodeId: string, fieldId: string, metadata: MetadataValues, propertyKeys?: string[]) => void;
   onRenameNode?: (nodeId: string, label: string) => void;
   onRenameField?: (nodeId: string, fieldId: string, label: string) => void;
   onDeleteField?: (nodeId: string, fieldId: string) => void;
@@ -35,6 +41,10 @@ function safeMetadata(value: unknown): MetadataValues {
   return { ...(value as MetadataValues) };
 }
 
+function safeProperties(value: ScopedProperty[] | null | undefined): ScopedProperty[] {
+  return Array.isArray(value) ? value.filter((property) => property?.id) : [];
+}
+
 export function MetadataSidebar({
   isOpen,
   stackOffset = false,
@@ -44,20 +54,24 @@ export function MetadataSidebar({
   fieldId = null,
   fieldLabel = null,
   metadata: metadataProp,
-  properties: propertiesProp,
+  blockProperties: blockPropertiesProp,
+  fieldProperties: fieldPropertiesProp,
   selectionContext: selectionContextProp,
+  lockBlockPropertyKeys = false,
   lockFieldPropertyKeys = false,
+  allowAddBlockAttributes = false,
   allowAddFieldAttributes = false,
-  onUpdateMetadata,
+  onUpdateBlockMetadata,
+  onUpdateFieldAttributeKeys,
+  onUpdateFieldMetadata,
   onRenameNode,
   onRenameField,
   onDeleteField,
   onDeleteNode,
 }: MetadataSidebarProps) {
   const metadata = safeMetadata(metadataProp);
-  const properties = Array.isArray(propertiesProp)
-    ? propertiesProp.filter((property) => property?.id)
-    : [];
+  const blockProperties = safeProperties(blockPropertiesProp);
+  const fieldProperties = safeProperties(fieldPropertiesProp);
 
   const selectionContext: MetadataSelectionContext =
     selectionContextProp === "field" && fieldId ? "field" : "node";
@@ -82,11 +96,16 @@ export function MetadataSidebar({
       isFieldContext={isFieldContext}
       displayName={displayName}
       metadata={metadata}
-      properties={properties}
-      lockFieldPropertyKeys={isFieldContext && lockFieldPropertyKeys}
-      allowAddFieldAttributes={isFieldContext && allowAddFieldAttributes}
+      blockProperties={blockProperties}
+      fieldProperties={fieldProperties}
+      lockBlockPropertyKeys={lockBlockPropertyKeys}
+      lockFieldPropertyKeys={lockFieldPropertyKeys}
+      allowAddBlockAttributes={allowAddBlockAttributes}
+      allowAddFieldAttributes={allowAddFieldAttributes}
       onClose={onClose}
-      onUpdateMetadata={onUpdateMetadata}
+      onUpdateBlockMetadata={onUpdateBlockMetadata}
+      onUpdateFieldAttributeKeys={onUpdateFieldAttributeKeys}
+      onUpdateFieldMetadata={onUpdateFieldMetadata}
       onRenameNode={onRenameNode}
       onRenameField={onRenameField}
       onDeleteField={onDeleteField}
@@ -101,12 +120,17 @@ function MetadataSidebarContent({
   isFieldContext,
   displayName,
   metadata,
-  properties,
+  blockProperties,
+  fieldProperties,
+  lockBlockPropertyKeys,
   lockFieldPropertyKeys,
+  allowAddBlockAttributes,
   allowAddFieldAttributes,
   stackOffset,
   onClose,
-  onUpdateMetadata,
+  onUpdateBlockMetadata,
+  onUpdateFieldAttributeKeys,
+  onUpdateFieldMetadata,
   onRenameNode,
   onRenameField,
   onDeleteField,
@@ -117,12 +141,17 @@ function MetadataSidebarContent({
   isFieldContext: boolean;
   displayName: string;
   metadata: MetadataValues;
-  properties: ScopedProperty[];
+  blockProperties: ScopedProperty[];
+  fieldProperties: ScopedProperty[];
+  lockBlockPropertyKeys: boolean;
   lockFieldPropertyKeys: boolean;
+  allowAddBlockAttributes: boolean;
   allowAddFieldAttributes: boolean;
   stackOffset: boolean;
   onClose: () => void;
-  onUpdateMetadata: (nodeId: string, metadata: MetadataValues, propertyKeys?: string[]) => void;
+  onUpdateBlockMetadata: (nodeId: string, metadata: MetadataValues, propertyKeys?: string[]) => void;
+  onUpdateFieldAttributeKeys: (nodeId: string, propertyKeys: string[]) => void;
+  onUpdateFieldMetadata: (nodeId: string, fieldId: string, metadata: MetadataValues, propertyKeys?: string[]) => void;
   onRenameNode?: (nodeId: string, label: string) => void;
   onRenameField?: (nodeId: string, fieldId: string, label: string) => void;
   onDeleteField?: (nodeId: string, fieldId: string) => void;
@@ -208,17 +237,47 @@ function MetadataSidebarContent({
           </Button>
         )}
 
+        {!isFieldContext && (
+          <div className="space-y-2">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              {SCHEMA_SCOPE_LABELS.global.title}
+            </p>
+            <MetadataKeyValueGrid
+              metadata={metadata}
+              properties={blockProperties}
+              resetKey={`${nodeId}-block`}
+              lockPropertyKeys={lockBlockPropertyKeys && blockProperties.length > 0}
+              allowAddBlockAttributes={allowAddBlockAttributes}
+              onChange={(next, propertyKeys) => onUpdateBlockMetadata(nodeId, next, propertyKeys)}
+            />
+          </div>
+        )}
+
         <div className="space-y-2">
           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {isFieldContext ? "Field attributes" : "Block attributes"}
+            {SCHEMA_SCOPE_LABELS.group.title}
           </p>
+          {!isFieldContext && (
+            <p className="text-[11px] text-muted-foreground">
+              Property keys for fields in this block. Set values on each field.
+            </p>
+          )}
           <MetadataKeyValueGrid
-            metadata={metadata}
-            properties={properties}
-            resetKey={`${nodeId}-${fieldId ?? "node"}`}
-            lockPropertyKeys={isFieldContext && lockFieldPropertyKeys}
-            allowAddBlockAttributes={isFieldContext && allowAddFieldAttributes}
-            onChange={(next, propertyKeys) => onUpdateMetadata(nodeId, next, propertyKeys)}
+            metadata={isFieldContext ? metadata : {}}
+            properties={fieldProperties}
+            resetKey={`${nodeId}-${fieldId ?? "node"}-field`}
+            lockPropertyKeys={lockFieldPropertyKeys && fieldProperties.length > 0}
+            allowAddBlockAttributes={isFieldContext ? allowAddFieldAttributes : allowAddFieldAttributes}
+            valuesReadOnly={!isFieldContext}
+            onChange={(next, propertyKeys) => {
+              if (isFieldContext && fieldId) {
+                onUpdateFieldMetadata(nodeId, fieldId, next, propertyKeys);
+                return;
+              }
+              if (propertyKeys?.length) {
+                onUpdateFieldAttributeKeys(nodeId, propertyKeys);
+              }
+            }}
           />
         </div>
       </div>

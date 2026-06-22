@@ -37,12 +37,29 @@ export function SchemaEditorSidebar({
   if (!group && !artifact) return null;
 
   const title = group?.name ?? artifact?.name ?? artifactDefinition?.label ?? "Schema";
-  const globalProperties = schema.globalProperties ?? [];
+  const blockProperties = isArtifact
+    ? (artifact?.blockProperties ?? [])
+    : (group?.blockProperties ?? []);
+  const fieldProperties = isArtifact ? (artifact?.properties ?? []) : (group?.properties ?? []);
 
-  const updateGlobalProperties = (properties: PropertyDefinition[]) => {
+  const updateBlockProperties = (properties: PropertyDefinition[]) => {
+    if (isArtifact && customObjectId) {
+      onUpdateSchema((prev) => ({
+        ...prev,
+        customObjectSchemas: (prev.customObjectSchemas ?? []).map((item) =>
+          item.id === customObjectId ? { ...item, blockProperties: properties } : item,
+        ),
+        timestamp: Date.now(),
+      }));
+      return;
+    }
+
+    if (!groupId) return;
     onUpdateSchema((prev) => ({
       ...prev,
-      globalProperties: properties,
+      nodeGroups: prev.nodeGroups.map((item) =>
+        item.id === groupId ? { ...item, blockProperties: properties } : item,
+      ),
       timestamp: Date.now(),
     }));
   };
@@ -104,8 +121,6 @@ export function SchemaEditorSidebar({
     }));
   };
 
-  const fieldProperties = isArtifact ? (artifact?.properties ?? []) : (group?.properties ?? []);
-
   return (
     <div className="schema-editor-sidebar">
       <div className="schema-editor-sidebar__header">
@@ -158,17 +173,13 @@ export function SchemaEditorSidebar({
             <h3>{SCHEMA_SCOPE_LABELS.global.title}</h3>
             <p>{SCHEMA_SCOPE_LABELS.global.description}</p>
           </div>
-          <SchemaPropertyGrid properties={globalProperties} onChange={updateGlobalProperties} />
+          <SchemaPropertyGrid properties={blockProperties} onChange={updateBlockProperties} />
         </section>
 
         <section className="schema-editor-sidebar__section">
           <div className="schema-editor-sidebar__section-head">
             <h3>{SCHEMA_SCOPE_LABELS.group.title}</h3>
-            <p>
-              {isArtifact
-                ? "Apply only to fields in this data asset (columns and keys)."
-                : SCHEMA_SCOPE_LABELS.group.description}
-            </p>
+            <p>{SCHEMA_SCOPE_LABELS.group.description}</p>
           </div>
           <SchemaPropertyGrid properties={fieldProperties} onChange={updateFieldProperties} />
         </section>

@@ -2,13 +2,13 @@ export const SCHEMA_SCOPE_LABELS = {
   global: {
     title: "Block Attributes",
     short: "block",
-    description: "Apply to every block and field on this sheet.",
+    description: "Shared attribute keys for this block type (values set per block instance on the canvas).",
     columnTooltip: "Block attribute",
   },
   group: {
     title: "Field Attributes",
     short: "field",
-    description: "Apply only to fields in this block (table columns).",
+    description: "Same shared keys as block attributes; field values are set per field on the canvas.",
     columnTooltip: "Field attribute",
   },
 } as const;

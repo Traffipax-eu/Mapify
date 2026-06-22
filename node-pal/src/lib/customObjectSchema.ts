@@ -19,6 +19,7 @@ export function ensureCustomObjectSchema(
       {
         id: objectId,
         name: name ?? definition?.label ?? "Artifact",
+        blockProperties: [],
         properties: [],
       },
     ],
