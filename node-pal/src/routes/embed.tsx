@@ -7,7 +7,7 @@ export const Route = createFileRoute("/embed")({
       { title: "Mapify Embed" },
       {
         name: "description",
-        content: "Interactive encrypted Mapify diagram embed.",
+        content: "Interactive Mapify diagram embed.",
       },
     ],
   }),

@@ -130,7 +130,7 @@ export function FileMenu({
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onGenerateEmbed}>
             <Code2 className="mr-2 h-4 w-4" />
-            Embed snippet (encrypted)
+            Embed snippet
           </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger disabled={isVisualExporting}>

@@ -5,10 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DiagramEmbedCanvas } from "@/components/DiagramEmbedCanvas";
 import {
-  readEmbedCiphertextFromHash,
+  decryptEmbedPayload,
+  readEmbedDataFromHash,
+  unpackDiagramEmbedPayload,
   type DiagramEmbedPayload,
 } from "@/lib/embedExport";
-import { decryptData } from "@/utils/encryption";
+import { useEmbedAutosize } from "@/lib/useEmbedAutosize";
 
 export function EmbedViewer() {
   const [ciphertext, setCiphertext] = useState<string | null>(null);
@@ -17,14 +19,38 @@ export function EmbedViewer() {
   const [payload, setPayload] = useState<DiagramEmbedPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isUnlocking, setIsUnlocking] = useState(false);
+  const [isLoadingPlain, setIsLoadingPlain] = useState(false);
+
+  useEmbedAutosize(Boolean(payload));
 
   useEffect(() => {
-    const fromHash = readEmbedCiphertextFromHash();
+    const fromHash = readEmbedDataFromHash();
     if (!fromHash) {
-      setError("No encrypted diagram found in this embed link.");
+      setError("No diagram found in this embed link.");
       return;
     }
-    setCiphertext(fromHash);
+
+    if (fromHash.kind === "plain") {
+      setIsLoadingPlain(true);
+      setError(null);
+      void unpackDiagramEmbedPayload(fromHash.data)
+        .then((parsed) => {
+          if (!parsed?.nodes || !parsed?.edges) {
+            setError("This embed link is corrupted or incomplete.");
+            return;
+          }
+          setPayload(parsed);
+        })
+        .catch(() => {
+          setError("Could not load this embed link.");
+        })
+        .finally(() => {
+          setIsLoadingPlain(false);
+        });
+      return;
+    }
+
+    setCiphertext(fromHash.data);
     setError(null);
   }, []);
 
@@ -38,7 +64,7 @@ export function EmbedViewer() {
     setIsUnlocking(true);
     setError(null);
     try {
-      const parsed = decryptData<DiagramEmbedPayload>(ciphertext, password);
+      const parsed = await decryptEmbedPayload(ciphertext, password);
       if (!parsed?.nodes || !parsed?.edges) {
         setError("Invalid password or corrupted embed data.");
         setPayload(null);
@@ -63,6 +89,16 @@ export function EmbedViewer() {
     );
   }
 
+  if (isLoadingPlain) {
+    return (
+      <div className="embed-viewer embed-viewer--locked">
+        <div className="embed-viewer__card">
+          <p className="embed-viewer__text">Loading diagram…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="embed-viewer embed-viewer--locked">
       <div className="embed-viewer__card">
@@ -71,8 +107,8 @@ export function EmbedViewer() {
         </div>
         <h1 className="embed-viewer__title">{title}</h1>
         <p className="embed-viewer__text">
-          This interactive diagram is encrypted. Enter the password shared by the author to unlock
-          pan, zoom, and selection inside the embed.
+          This interactive diagram is password protected. Enter the password shared by the author to
+          unlock pan, zoom, and selection inside the embed.
         </p>
 
         {ciphertext ? (

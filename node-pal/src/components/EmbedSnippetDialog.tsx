@@ -13,13 +13,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
-  MAX_EMBED_HASH_LENGTH,
   buildConfluenceHint,
-  buildEmbedUrl,
+  buildEncryptedEmbedUrl,
   buildIframeSnippet,
+  buildPlainEmbedUrl,
+  packDiagramEmbedPayload,
   type DiagramEmbedPayload,
 } from "@/lib/embedExport";
-import { encryptData } from "@/utils/encryption";
+import { encryptPlaintext } from "@/utils/encryption";
 
 type Props = {
   open: boolean;
@@ -30,14 +31,13 @@ type Props = {
 export function EmbedSnippetDialog({ open, onOpenChange, getPayload }: Props) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [height, setHeight] = useState("640");
   const [generated, setGenerated] = useState<{
     embedUrl: string;
     snippet: string;
   } | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const confluenceHint = useMemo(() => buildConfluenceHint(), []);
+  const confluenceHint = useMemo(() => buildConfluenceHint(true), []);
 
   const reset = () => {
     setPassword("");
@@ -45,12 +45,9 @@ export function EmbedSnippetDialog({ open, onOpenChange, getPayload }: Props) {
     setGenerated(null);
   };
 
-  const handleGenerate = () => {
-    if (!password.trim()) {
-      toast.error("Enter an embed password");
-      return;
-    }
-    if (password !== confirmPassword) {
+  const handleGenerate = async () => {
+    const trimmedPassword = password.trim();
+    if (trimmedPassword && trimmedPassword !== confirmPassword.trim()) {
       toast.error("Passwords do not match");
       return;
     }
@@ -58,18 +55,11 @@ export function EmbedSnippetDialog({ open, onOpenChange, getPayload }: Props) {
     setIsGenerating(true);
     try {
       const payload = getPayload();
-      const ciphertext = encryptData(payload, password);
-      const embedUrl = buildEmbedUrl(ciphertext);
-      if (embedUrl.length > MAX_EMBED_HASH_LENGTH) {
-        toast.error(
-          "Diagram is too large for an inline embed link. Export encrypted file or use cloud instead.",
-        );
-        return;
-      }
-
-      const parsedHeight = Number.parseInt(height, 10);
+      const packed = await packDiagramEmbedPayload(payload);
+      const embedUrl = trimmedPassword
+        ? buildEncryptedEmbedUrl(encryptPlaintext(packed, trimmedPassword))
+        : buildPlainEmbedUrl(packed);
       const snippet = buildIframeSnippet(embedUrl, {
-        height: Number.isFinite(parsedHeight) ? parsedHeight : 640,
         title: payload.projectName,
       });
       setGenerated({ embedUrl, snippet });
@@ -102,11 +92,12 @@ export function EmbedSnippetDialog({ open, onOpenChange, getPayload }: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Code2 className="h-5 w-5 text-[#0067F5]" />
-            Encrypted embed snippet
+            Embed snippet
           </DialogTitle>
           <DialogDescription>
-            Generate an iframe for Confluence or any site. The diagram stays encrypted in the URL;
-            viewers enter the password inside the embed to interact (pan, zoom, select).
+            Generate an iframe for Confluence or any site. The diagram loads interactively (pan,
+            zoom, select). Leave the password empty for a direct embed, or set one to encrypt the
+            link.
           </DialogDescription>
         </DialogHeader>
 
@@ -114,13 +105,13 @@ export function EmbedSnippetDialog({ open, onOpenChange, getPayload }: Props) {
           <div className="embed-snippet-dialog__form space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="space-y-2 text-sm">
-                <Label htmlFor="embed-gen-password">Embed password</Label>
+                <Label htmlFor="embed-gen-password">Password (optional)</Label>
                 <Input
                   id="embed-gen-password"
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Share separately from the page"
+                  placeholder="Leave empty for no password"
                 />
               </label>
               <label className="space-y-2 text-sm">
@@ -130,21 +121,12 @@ export function EmbedSnippetDialog({ open, onOpenChange, getPayload }: Props) {
                   type="password"
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
+                  placeholder="Only if you set a password"
+                  disabled={!password.trim()}
                 />
               </label>
             </div>
-            <label className="space-y-2 text-sm">
-              <Label htmlFor="embed-height">Iframe height (px)</Label>
-              <Input
-                id="embed-height"
-                type="number"
-                min={320}
-                max={1200}
-                value={height}
-                onChange={(event) => setHeight(event.target.value)}
-              />
-            </label>
-            <Button type="button" className="w-full" onClick={handleGenerate} disabled={isGenerating}>
+            <Button type="button" className="w-full" onClick={() => void handleGenerate()} disabled={isGenerating}>
               {isGenerating ? "Generating…" : "Generate snippet"}
             </Button>
           </div>
@@ -187,7 +169,7 @@ export function EmbedSnippetDialog({ open, onOpenChange, getPayload }: Props) {
                   Copy snippet
                 </Button>
               </div>
-              <Textarea readOnly value={generated.snippet} rows={5} className="font-mono text-xs" />
+              <Textarea readOnly value={generated.snippet} rows={6} className="font-mono text-xs" />
             </div>
 
             <p className="embed-snippet-dialog__hint text-sm text-muted-foreground">{confluenceHint}</p>

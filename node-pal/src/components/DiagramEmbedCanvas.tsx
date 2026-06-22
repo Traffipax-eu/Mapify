@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -6,6 +6,7 @@ import ReactFlow, {
   MarkerType,
   Panel,
   ReactFlowProvider,
+  useReactFlow,
   type Edge,
   type Node,
 } from "reactflow";
@@ -25,6 +26,7 @@ import type { Schema } from "@/lib/storage";
 import { DEFAULT_SCHEMA } from "@/lib/storage";
 import { normalizeSchema } from "@/lib/schemaProperties";
 import type { DiagramEmbedPayload } from "@/lib/embedExport";
+import { postEmbedHeight } from "@/lib/embedExport";
 import { computeLineage, decorateEdgesForDisplay } from "@/lib/lineageTraversal";
 import type { SystemNodeData } from "./nodes/SystemNode";
 
@@ -48,6 +50,7 @@ type Props = {
 };
 
 function DiagramEmbedCanvasInner({ payload, className }: Props) {
+  const { fitView } = useReactFlow();
   const [lineageAnchor, setLineageAnchor] = useState<{
     nodeId: string;
     fieldId?: string | null;
@@ -143,6 +146,18 @@ function DiagramEmbedCanvasInner({ payload, className }: Props) {
     }),
     [schema, edges, lineage.edgeIds, lineageAnchor, handleFieldSelect],
   );
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      void fitView({ padding: 0.12, duration: 0 });
+      window.setTimeout(() => {
+        postEmbedHeight(
+          Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, 480),
+        );
+      }, 50);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [fitView, nodes.length, edges.length]);
 
   return (
     <NodeCanvasProvider value={nodeCanvasValue}>

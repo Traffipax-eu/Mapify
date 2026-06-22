@@ -16,6 +16,29 @@ export function encryptData(dataObject: unknown, password: string): string {
  * Decrypts an AES ciphertext string and parses JSON.
  * Returns null when the password is wrong or the payload is corrupted.
  */
+/** Encrypts a raw string (e.g. compressed embed payload) without wrapping JSON. */
+export function encryptPlaintext(plaintext: string, password: string): string {
+  if (!password) {
+    throw new Error("Encryption password is required");
+  }
+  return CryptoJS.AES.encrypt(plaintext, password).toString();
+}
+
+/** Decrypts to a raw string. Returns null when the password is wrong. */
+export function decryptPlaintext(encryptedString: string, password: string): string | null {
+  if (!password || !encryptedString?.trim()) {
+    return null;
+  }
+
+  try {
+    const bytes = CryptoJS.AES.decrypt(encryptedString.trim(), password);
+    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+    return decrypted || null;
+  } catch {
+    return null;
+  }
+}
+
 export function decryptData<T = unknown>(encryptedString: string, password: string): T | null {
   if (!password || !encryptedString?.trim()) {
     return null;
