@@ -33,9 +33,17 @@ function stripDisplayData<T extends Record<string, unknown>>(data: T): T {
 function cloneSystemNodeData(data: SystemNodeData): SystemNodeData {
   const cloned = stripDisplayData(data);
 
+  const groupIdMap = new Map<string, string>();
+  const groups = (cloned.groups ?? []).map((group, index) => {
+    const newId = `grp_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`;
+    groupIdMap.set(group.id, newId);
+    return { ...group, id: newId };
+  });
+
   const fields = (cloned.fields ?? []).map((field, index) => ({
     ...field,
     id: `f_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`,
+    groupId: field.groupId ? groupIdMap.get(field.groupId) : undefined,
     metadata: field.metadata ? { ...field.metadata } : undefined,
   }));
 
@@ -44,6 +52,7 @@ function cloneSystemNodeData(data: SystemNodeData): SystemNodeData {
     fields,
     metadata: cloned.metadata ? { ...cloned.metadata } : {},
     sections: cloned.sections?.map((section) => ({ ...section })),
+    groups,
     visibleColumns: cloned.visibleColumns ? [...cloned.visibleColumns] : undefined,
     fieldAttributeKeys: cloned.fieldAttributeKeys ? [...cloned.fieldAttributeKeys] : undefined,
   };

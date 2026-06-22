@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderPlus,
+  Layers,
   Minus,
   Pencil,
   Plus,
@@ -22,16 +23,25 @@ import {
 } from "@/lib/fieldMetadata";
 import { BlockInternalFieldLinks } from "@/components/nodes/BlockInternalFieldLinks";
 import {
+  countFieldsInGroup,
+  countFieldsInSection,
+  createGroup,
   createSection,
   DEFAULT_SECTION_ID,
+  deleteGroupFromNode,
   deleteSectionFromNode,
   ensureExplicitSections,
+  getEffectiveGroups,
   getEffectiveSections,
-  getFieldSectionId,
+  getFieldsForGroup,
   getFieldsForSection,
+  getGroupsForSection,
   getRenderableSections,
+  moveFieldToGroup,
   moveFieldToSection,
   reorderFieldsInList,
+  toggleGroupCollapsed,
+  toggleSectionCollapsed,
 } from "@/lib/nodeSections";
 import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
@@ -61,12 +71,21 @@ export type Field = {
   label: string;
   fieldTypeId?: string;
   sectionId?: string;
+  groupId?: string;
   metadata?: MetadataValues;
 };
 
 export type FieldSection = {
   id: string;
   name: string;
+  collapsed?: boolean;
+};
+
+export type FieldGroup = {
+  id: string;
+  name: string;
+  sectionId: string;
+  collapsed?: boolean;
 };
 
 export type SystemNodeData = {
@@ -75,6 +94,7 @@ export type SystemNodeData = {
   icon?: string;
   color?: string;
   sections?: FieldSection[];
+  groups?: FieldGroup[];
   fields?: Field[];
   collapsed?: boolean;
   tableExpanded?: boolean;
@@ -94,6 +114,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
 
   const fields = data.fields ?? [];
   const sections = useMemo(() => getEffectiveSections(data), [data.sections]);
+  const groups = useMemo(() => getEffectiveGroups(data), [data.groups]);
   const renderableSections = useMemo(() => getRenderableSections(data, fields), [data, fields]);
   const collapsed = !!data.collapsed;
   const tableExpanded = !!data.tableExpanded;
@@ -146,9 +167,13 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const [showSettings, setShowSettings] = useState(false);
   const [newField, setNewField] = useState("");
   const [addFieldSectionId, setAddFieldSectionId] = useState(sections[0]?.id ?? DEFAULT_SECTION_ID);
+  const [addFieldGroupId, setAddFieldGroupId] = useState<string | undefined>(undefined);
   const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
   const [sectionNameDraft, setSectionNameDraft] = useState("");
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [groupNameDraft, setGroupNameDraft] = useState("");
   const [sectionDropTargetId, setSectionDropTargetId] = useState<string | null>(null);
+  const [groupDropTargetId, setGroupDropTargetId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sections.some((section) => section.id === addFieldSectionId)) {
@@ -203,11 +228,13 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
             id: `f_${Date.now()}`,
             label: value,
             sectionId: targetSection,
+            groupId: addFieldGroupId,
           },
         ],
       };
     });
     setNewField("");
+    refreshNodeLayout();
   };
 
   const addSection = () => {
@@ -244,10 +271,70 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
 
     if (addFieldSectionId === sectionId) {
       setAddFieldSectionId(sections.find((section) => section.id !== sectionId)?.id ?? DEFAULT_SECTION_ID);
+      setAddFieldGroupId(undefined);
     }
     if (editingSectionId === sectionId) {
       setEditingSectionId(null);
     }
+  };
+
+  const addGroup = (sectionId: string) => {
+    const group = createGroup(sectionId);
+    update((d) => {
+      const next = ensureExplicitSections(d);
+      return {
+        ...next,
+        groups: [...getEffectiveGroups(next), group],
+      };
+    });
+    setAddFieldSectionId(sectionId);
+    setAddFieldGroupId(group.id);
+    setGroupNameDraft(group.name);
+    setEditingGroupId(group.id);
+    update((d) => {
+      const currentSection = (d.sections ?? getEffectiveSections(d)).find((item) => item.id === sectionId);
+      if (currentSection?.collapsed) {
+        return toggleSectionCollapsed(d, sectionId);
+      }
+      return d;
+    });
+  };
+
+  const commitGroupName = (groupId: string) => {
+    const nextName = groupNameDraft.trim();
+    if (!nextName) {
+      setEditingGroupId(null);
+      return;
+    }
+    update((d) => ({
+      ...d,
+      groups: getEffectiveGroups(d).map((group) =>
+        group.id === groupId ? { ...group, name: nextName } : group,
+      ),
+    }));
+    setEditingGroupId(null);
+  };
+
+  const deleteGroup = (groupId: string) => {
+    update((d) => deleteGroupFromNode(d, groupId));
+    if (addFieldGroupId === groupId) {
+      setAddFieldGroupId(undefined);
+    }
+    if (editingGroupId === groupId) {
+      setEditingGroupId(null);
+    }
+  };
+
+  const handleToggleSectionCollapsed = (sectionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    update((d) => toggleSectionCollapsed(d, sectionId));
+    refreshNodeLayout();
+  };
+
+  const handleToggleGroupCollapsed = (groupId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    update((d) => toggleGroupCollapsed(d, groupId));
+    refreshNodeLayout();
   };
 
   const handleMoveFieldToSection = (fieldId: string, sectionId: string) => {
@@ -284,6 +371,32 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     if (!source || source.nodeId !== id) return;
     handleMoveFieldToSection(source.fieldId, sectionId);
     setAddFieldSectionId(sectionId);
+    setAddFieldGroupId(undefined);
+  };
+
+  const handleGroupDragOver = (event: React.DragEvent, groupId: string) => {
+    if (!event.dataTransfer.types.includes(FIELD_REORDER_MIME)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setGroupDropTargetId(groupId);
+  };
+
+  const handleGroupDrop = (event: React.DragEvent, sectionId: string, groupId: string) => {
+    if (!event.dataTransfer.types.includes(FIELD_REORDER_MIME)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setGroupDropTargetId(null);
+
+    const source = parseFieldReorder(event.dataTransfer.getData(FIELD_REORDER_MIME));
+    if (!source || source.nodeId !== id) return;
+    update((d) => ({
+      ...d,
+      fields: moveFieldToGroup(d.fields ?? [], source.fieldId, sectionId, groupId),
+    }));
+    setAddFieldSectionId(sectionId);
+    setAddFieldGroupId(groupId);
+    refreshNodeLayout();
   };
 
   const updateNodeColor = (color: string) => {
@@ -484,71 +597,211 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           <div className="system-node__sections">
             {renderableSections.map((section) => {
               const sectionFields = getFieldsForSection(fields, section.id);
+              const sectionGroups = getGroupsForSection(groups, section.id);
+              const ungroupedFields = getFieldsForGroup(fields, section.id, null);
               const isEditingSection = editingSectionId === section.id;
               const isDropTarget = sectionDropTargetId === section.id;
+              const sectionMeta = sections.find((item) => item.id === section.id);
+              const sectionCollapsed = !!sectionMeta?.collapsed;
+              const sectionFieldCount = countFieldsInSection(fields, section.id);
+              const showSectionChrome = section.showHeader || sectionGroups.length > 0 || sectionFieldCount > 0;
 
               return (
                 <div
                   key={section.id}
-                  className={`system-node__section ${isDropTarget ? "is-drop-target" : ""}`}
+                  className={`system-node__section ${isDropTarget ? "is-drop-target" : ""} ${
+                    sectionCollapsed ? "system-node__section--collapsed" : ""
+                  }`}
                   onDragOver={(event) => handleSectionDragOver(event, section.id)}
                   onDragLeave={() => setSectionDropTargetId(null)}
                   onDrop={(event) => handleSectionDrop(event, section.id)}
                 >
-                  {section.showHeader && (
-                  <div className="system-node__section-header">
-                    {isEditingSection ? (
-                      <input
-                        autoFocus
-                        value={sectionNameDraft}
-                        onChange={(e) => setSectionNameDraft(e.target.value)}
-                        onBlur={() => commitSectionName(section.id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") commitSectionName(section.id);
-                          if (e.key === "Escape") setEditingSectionId(null);
-                        }}
-                        className="system-node__section-title-input nodrag nopan nowheel"
-                      />
-                    ) : (
+                  {showSectionChrome && (
+                    <div
+                      className={`system-node__section-header ${
+                        section.showHeader ? "" : "system-node__section-header--minimal"
+                      }`}
+                    >
                       <button
                         type="button"
-                        className="system-node__section-title nodrag nopan"
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          setSectionNameDraft(section.name);
-                          setEditingSectionId(section.id);
-                        }}
-                        title="Double-click to rename section"
+                        onClick={(e) => handleToggleSectionCollapsed(section.id, e)}
+                        className="system-node__section-chevron nodrag nopan"
+                        title={sectionCollapsed ? "Expand section" : "Collapse section"}
                       >
-                        {section.name}
+                        {sectionCollapsed ? (
+                          <ChevronRight className="h-3 w-3" />
+                        ) : (
+                          <ChevronDown className="h-3 w-3" />
+                        )}
                       </button>
-                    )}
-                    {sections.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteSection(section.id);
-                        }}
-                        className="system-node__section-delete nodrag nopan"
-                        title={
-                          sectionFields.length > 0
-                            ? "Remove section (fields move to General)"
-                            : "Remove section"
-                        }
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
+                      {section.showHeader && (
+                        <>
+                          {isEditingSection ? (
+                            <input
+                              autoFocus
+                              value={sectionNameDraft}
+                              onChange={(e) => setSectionNameDraft(e.target.value)}
+                              onBlur={() => commitSectionName(section.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") commitSectionName(section.id);
+                                if (e.key === "Escape") setEditingSectionId(null);
+                              }}
+                              className="system-node__section-title-input nodrag nopan nowheel"
+                              onPointerDown={stopPointer}
+                              onClick={stopPointer}
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              className="system-node__section-title nodrag nopan"
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                setSectionNameDraft(section.name);
+                                setEditingSectionId(section.id);
+                              }}
+                              title="Double-click to rename section"
+                            >
+                              {section.name}
+                            </button>
+                          )}
+                        </>
+                      )}
+                      {sectionCollapsed && sectionFieldCount > 0 && (
+                        <span className="system-node__section-count">{sectionFieldCount}</span>
+                      )}
+                      {!sectionCollapsed && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            addGroup(section.id);
+                          }}
+                          className="system-node__group-add-btn nodrag nopan"
+                          title="Add group"
+                        >
+                          <Layers className="h-3 w-3" />
+                        </button>
+                      )}
+                      {sections.length > 1 && section.showHeader && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteSection(section.id);
+                          }}
+                          className="system-node__section-delete nodrag nopan"
+                          title={
+                            sectionFields.length > 0
+                              ? "Remove section (fields move to General)"
+                              : "Remove section"
+                          }
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
                   )}
 
-                  {sectionFields.length === 0 ? (
-                    <div className="system-node__section-empty nodrag nopan">
-                      No fields yet — add below or Alt+drag fields here
+                  {!sectionCollapsed && (
+                    <div className="system-node__section-body">
+                      {ungroupedFields.length === 0 && sectionGroups.length === 0 ? (
+                        <div className="system-node__section-empty nodrag nopan">
+                          No fields yet — add below or Alt+drag fields here
+                        </div>
+                      ) : (
+                        ungroupedFields.length > 0 && renderFieldList(ungroupedFields)
+                      )}
+
+                      {sectionGroups.map((group) => {
+                        const groupFields = getFieldsForGroup(fields, section.id, group.id);
+                        const isEditingGroup = editingGroupId === group.id;
+                        const isGroupDropTarget = groupDropTargetId === group.id;
+                        const groupCollapsed = !!group.collapsed;
+                        const groupFieldCount = countFieldsInGroup(fields, section.id, group.id);
+
+                        return (
+                          <div
+                            key={group.id}
+                            className={`system-node__field-group ${
+                              isGroupDropTarget ? "is-drop-target" : ""
+                            } ${groupCollapsed ? "system-node__field-group--collapsed" : ""}`}
+                            onDragOver={(event) => handleGroupDragOver(event, group.id)}
+                            onDragLeave={() => setGroupDropTargetId(null)}
+                            onDrop={(event) => handleGroupDrop(event, section.id, group.id)}
+                          >
+                            <div className="system-node__group-header">
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleGroupCollapsed(group.id, e)}
+                                className="system-node__group-chevron nodrag nopan"
+                                title={groupCollapsed ? "Expand group" : "Collapse group"}
+                              >
+                                {groupCollapsed ? (
+                                  <ChevronRight className="h-3 w-3" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3" />
+                                )}
+                              </button>
+                              {isEditingGroup ? (
+                                <input
+                                  autoFocus
+                                  value={groupNameDraft}
+                                  onChange={(e) => setGroupNameDraft(e.target.value)}
+                                  onBlur={() => commitGroupName(group.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") commitGroupName(group.id);
+                                    if (e.key === "Escape") setEditingGroupId(null);
+                                  }}
+                                  className="system-node__group-title-input nodrag nopan nowheel"
+                                  onPointerDown={stopPointer}
+                                  onClick={stopPointer}
+                                />
+                              ) : (
+                                <span className="system-node__group-title">{group.name}</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setGroupNameDraft(group.name);
+                                  setEditingGroupId(group.id);
+                                }}
+                                className="system-node__group-rename nodrag nopan"
+                                title="Rename group"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              {groupCollapsed && groupFieldCount > 0 && (
+                                <span className="system-node__group-count">{groupFieldCount}</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteGroup(group.id);
+                                }}
+                                className="system-node__group-delete nodrag nopan"
+                                title="Remove group (fields stay in section)"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+
+                            {!groupCollapsed && (
+                              <div className="system-node__group-body">
+                                {groupFields.length === 0 ? (
+                                  <div className="system-node__group-empty nodrag nopan">
+                                    No fields yet — add below or Alt+drag fields here
+                                  </div>
+                                ) : (
+                                  renderFieldList(groupFields)
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  ) : (
-                    renderFieldList(sectionFields)
                   )}
                 </div>
               );
