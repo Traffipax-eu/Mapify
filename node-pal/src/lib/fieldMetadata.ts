@@ -184,6 +184,18 @@ export function formatFieldCellValue(
   return String(value);
 }
 
+/** Raw string for inline table editing (empty cells return ""). */
+export function getFieldCellEditValue(
+  metadata: MetadataValues | undefined,
+  propertyId: string,
+  properties: PropertyDefinition[] | null | undefined,
+): string {
+  const value = resolveFieldMetadataValue(metadata, propertyId, properties);
+  if (isEmptyMetadataValue(value)) return "";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  return String(value);
+}
+
 /** Normalize field metadata to schema property ids for reliable persistence. */
 export function normalizeMetadataForProperties(
   metadata: MetadataValues | undefined,

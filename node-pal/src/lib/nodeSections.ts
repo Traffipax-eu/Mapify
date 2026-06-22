@@ -245,6 +245,30 @@ export function deleteGroupFromNode(data: SystemNodeData, groupId: string): Syst
   };
 }
 
+export function insertFieldsAtPlacement(
+  fields: Field[],
+  sectionId: string,
+  groupId: string | undefined,
+  newFields: Field[],
+): Field[] {
+  if (newFields.length === 0) return fields;
+
+  const list = [...fields];
+  let insertIndex = list.length;
+
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const field = list[index];
+    if (getFieldSectionId(field) !== sectionId) continue;
+    if (groupId ? field.groupId === groupId : !field.groupId) {
+      insertIndex = index + 1;
+      break;
+    }
+  }
+
+  list.splice(insertIndex, 0, ...newFields);
+  return list;
+}
+
 export function deleteSectionFromNode(
   data: SystemNodeData,
   sectionId: string,

@@ -53,6 +53,8 @@ import {
   BookOpen,
   CircleHelp,
   PenTool,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { workspaceStorage, type Sheet } from "@/lib/workspaceStorage";
@@ -113,6 +115,9 @@ import {
   getSelectedCopyableNodes,
   isEditableKeyboardTarget,
 } from "@/lib/clipboardNodes";
+import { cloneCanvasSnapshot, createCanvasHistoryState } from "@/lib/canvasHistory";
+import { ensureExplicitSections, insertFieldsAtPlacement } from "@/lib/nodeSections";
+import type { TablePastePlan } from "@/lib/tableClipboard";
 
 let nodeIdCounter = 1;
 const nextNodeId = () => `n_${Date.now()}_${nodeIdCounter++}`;
@@ -153,6 +158,9 @@ function InnerCanvas() {
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
   const [nodes, setNodes, onNodesChangeBase] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const historyRef = useRef(createCanvasHistoryState());
+  const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
   const [schema, setSchema] = useState<Schema>(DEFAULT_SCHEMA);
   const [hydrated, setHydrated] = useState(false);
   const [activeTouchpointId, setActiveTouchpointId] = useState<string | null>(null);
@@ -187,6 +195,36 @@ function InnerCanvas() {
   }, []);
 
   const schemaEditorOpen = Boolean(schemaEditorGroupId || schemaEditorCustomObjectId);
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
+
+  const pushUndo = useCallback(() => {
+    historyRef.current.push(cloneCanvasSnapshot(nodesRef.current, edgesRef.current));
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    const restored = historyRef.current.undo(
+      cloneCanvasSnapshot(nodesRef.current, edgesRef.current),
+    );
+    if (!restored) return;
+    setNodes(restored.nodes);
+    setEdges(restored.edges);
+  }, [setNodes, setEdges]);
+
+  const handleRedo = useCallback(() => {
+    const restored = historyRef.current.redo(
+      cloneCanvasSnapshot(nodesRef.current, edgesRef.current),
+    );
+    if (!restored) return;
+    setNodes(restored.nodes);
+    setEdges(restored.edges);
+  }, [setNodes, setEdges]);
 
   const clearMetadataSelection = useCallback(() => {
     setSelectedNodeId(null);
@@ -298,6 +336,7 @@ function InnerCanvas() {
 
   const applySheetToCanvas = useCallback(
     (sheet: Sheet) => {
+      historyRef.current.clear();
       setNodes(
         (sheet.nodes as Node[]).map((n) => ({
           ...n,
@@ -410,6 +449,15 @@ function InnerCanvas() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      const shouldRecord = changes.some(
+        (change) =>
+          change.type === "remove" ||
+          (change.type === "position" && change.dragging === false),
+      );
+      if (shouldRecord) {
+        pushUndo();
+      }
+
       const removals = changes
         .filter((change): change is NodeChange & { type: "remove"; id: string } => change.type === "remove")
         .map((change) => change.id);
@@ -425,7 +473,7 @@ function InnerCanvas() {
 
       onNodesChangeBase(changes);
     },
-    [onNodesChangeBase, setNodes],
+    [onNodesChangeBase, pushUndo, setNodes],
   );
 
   const createEdgeFromConnection = useCallback(
@@ -466,9 +514,10 @@ function InnerCanvas() {
         },
       };
 
+      pushUndo();
       setEdges((eds) => addEdge(newEdge, eds));
     },
-    [setEdges],
+    [pushUndo, setEdges],
   );
 
   const onConnectEnd = useCallback((event: MouseEvent | TouchEvent) => {
@@ -922,6 +971,7 @@ function InnerCanvas() {
 
   const handleDeleteField = useCallback(
     (nodeId: string, fieldId: string) => {
+      pushUndo();
       setEdges((eds) =>
         eds.filter(
           (e) =>
@@ -963,13 +1013,14 @@ function InnerCanvas() {
       }
       toast.success("Field deleted");
     },
-    [setEdges, setNodes, selectedFieldId, lineageAnchor],
+    [setEdges, setNodes, selectedFieldId, lineageAnchor, pushUndo],
   );
 
   const handleRenameField = useCallback(
     (nodeId: string, fieldId: string, label: string) => {
       const next = label.trim();
       if (!next) return;
+      pushUndo();
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n;
@@ -989,13 +1040,14 @@ function InnerCanvas() {
         setSelectedFieldLabel(next);
       }
     },
-    [setNodes, selectedFieldId],
+    [setNodes, selectedFieldId, pushUndo],
   );
 
   const handleRenameNode = useCallback(
     (nodeId: string, label: string) => {
       const next = label.trim();
       if (!next) return;
+      pushUndo();
       setNodes((nds) =>
         nds.map((n) =>
           n.id === nodeId
@@ -1007,7 +1059,7 @@ function InnerCanvas() {
         setSelectedNodeLabel(next);
       }
     },
-    [setNodes, selectedNodeId],
+    [setNodes, selectedNodeId, pushUndo],
   );
 
   const cleanupAfterNodeDelete = useCallback(
@@ -1029,6 +1081,7 @@ function InnerCanvas() {
 
   const handleUpdateNodeData = useCallback(
     (nodeId: string, updater: (data: SystemNodeData) => SystemNodeData) => {
+      pushUndo();
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n;
@@ -1037,7 +1090,117 @@ function InnerCanvas() {
         }),
       );
     },
-    [setNodes],
+    [pushUndo, setNodes],
+  );
+
+  const handleUpdateFieldTableCell = useCallback(
+    (nodeId: string, fieldId: string, columnId: string, value: string) => {
+      pushUndo();
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== nodeId || (n.type !== "system" && n.type !== "customObject")) return n;
+          const clean = stripDisplayData(n.data as SystemNodeData & { objectId?: string });
+          const isCustomObject = n.type === "customObject";
+          const fields = Array.isArray(clean.fields) ? clean.fields : [];
+          const attributeDefinitions = getFieldAttributeDefinitions(
+            schema,
+            isCustomObject
+              ? {
+                  objectId: clean.objectId,
+                  fieldAttributeKeys: clean.fieldAttributeKeys,
+                  blockMetadata: clean.metadata,
+                }
+              : {
+                  nodeGroupId: clean.nodeGroupId,
+                  fieldAttributeKeys: clean.fieldAttributeKeys,
+                  blockMetadata: clean.metadata,
+                },
+            fields,
+            isCustomObject ? "artifact" : "block",
+          );
+
+          return {
+            ...n,
+            data: {
+              ...clean,
+              fields: fields.map((field) => {
+                if (field.id !== fieldId) return field;
+                const metadata = { ...(field.metadata ?? {}) };
+                if (value) metadata[columnId] = value;
+                else delete metadata[columnId];
+                return {
+                  ...field,
+                  metadata: buildFieldMetadataUpdate(metadata, attributeDefinitions),
+                };
+              }),
+            },
+          };
+        }),
+      );
+    },
+    [pushUndo, schema, setNodes],
+  );
+
+  const handleApplyFieldTablePaste = useCallback(
+    (nodeId: string, sectionId: string, groupId: string | undefined, plan: TablePastePlan) => {
+      pushUndo();
+      setNodes((nds) =>
+        nds.map((n) => {
+          if (n.id !== nodeId || (n.type !== "system" && n.type !== "customObject")) return n;
+          const clean = stripDisplayData(n.data as SystemNodeData & { objectId?: string });
+          const isCustomObject = n.type === "customObject";
+          let fields = Array.isArray(clean.fields) ? [...clean.fields] : [];
+          const attributeDefinitions = getFieldAttributeDefinitions(
+            schema,
+            isCustomObject
+              ? {
+                  objectId: clean.objectId,
+                  fieldAttributeKeys: clean.fieldAttributeKeys,
+                  blockMetadata: clean.metadata,
+                }
+              : {
+                  nodeGroupId: clean.nodeGroupId,
+                  fieldAttributeKeys: clean.fieldAttributeKeys,
+                  blockMetadata: clean.metadata,
+                },
+            fields,
+            isCustomObject ? "artifact" : "block",
+          );
+
+          fields = fields.map((field) => {
+            const update = plan.updates.find((item) => item.fieldId === field.id);
+            if (!update) return field;
+            const metadata = { ...(field.metadata ?? {}), ...update.metadata };
+            return {
+              ...field,
+              label: update.label ?? field.label,
+              metadata: buildFieldMetadataUpdate(metadata, attributeDefinitions),
+            };
+          });
+
+          const created = plan.newFields.map((item, index) => ({
+            id: `f_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 6)}`,
+            label: item.label,
+            sectionId,
+            groupId,
+            metadata: buildFieldMetadataUpdate(item.metadata, attributeDefinitions),
+          }));
+
+          if (created.length > 0) {
+            fields = insertFieldsAtPlacement(fields, sectionId, groupId, created);
+          }
+
+          return {
+            ...n,
+            data: ensureExplicitSections({
+              ...clean,
+              fields,
+            }),
+          };
+        }),
+      );
+    },
+    [pushUndo, schema, setNodes],
   );
 
   const handleUpdateDrawingNodeData = useCallback(
@@ -1066,11 +1229,12 @@ function InnerCanvas() {
 
   const handleDeleteNode = useCallback(
     (nodeId: string) => {
+      pushUndo();
       setNodes((nds) => nds.filter((n) => n.id !== nodeId));
       cleanupAfterNodeDelete([nodeId]);
       toast.success("Block deleted");
     },
-    [setNodes, cleanupAfterNodeDelete],
+    [setNodes, cleanupAfterNodeDelete, pushUndo],
   );
 
   const onNodesDelete: OnNodesDelete = useCallback(
@@ -1091,6 +1255,9 @@ function InnerCanvas() {
 
   const onEdgesDelete: OnEdgesDelete = useCallback(
     (deleted) => {
+      if (deleted.length > 0) {
+        pushUndo();
+      }
       if (selectedEdgeId && deleted.some((edge) => edge.id === selectedEdgeId)) {
         clearEdgeSelection();
       }
@@ -1098,7 +1265,7 @@ function InnerCanvas() {
         toast.success(`Deleted ${deleted.length} connections`);
       }
     },
-    [selectedEdgeId, clearEdgeSelection],
+    [selectedEdgeId, clearEdgeSelection, pushUndo],
   );
 
   const onNodeClick = useCallback(
@@ -1214,6 +1381,7 @@ function InnerCanvas() {
 
   const handleUpdateBlockMetadata = useCallback(
     (nodeId: string, metadata: MetadataValues, propertyKeys?: string[]) => {
+      pushUndo();
       const sanitizedInput = sanitizeFreeformMetadata(metadata);
       let selectedMetadata = sanitizedInput;
 
@@ -1258,11 +1426,12 @@ function InnerCanvas() {
       );
       setSelectedNodeMetadata(selectedMetadata);
     },
-    [setNodes, schema],
+    [pushUndo, setNodes, schema],
   );
 
   const handleUpdateBlockFieldAttributeKeys = useCallback(
     (nodeId: string, propertyKeys: string[]) => {
+      pushUndo();
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id !== nodeId) return n;
@@ -1312,11 +1481,12 @@ function InnerCanvas() {
         }),
       );
     },
-    [setNodes, schema],
+    [pushUndo, setNodes, schema],
   );
 
   const handleUpdateFieldMetadata = useCallback(
     (nodeId: string, fieldId: string, metadata: MetadataValues, propertyKeys?: string[]) => {
+      pushUndo();
       const sanitizedInput = sanitizeFreeformMetadata(metadata);
       let selectedMetadata = sanitizedInput;
 
@@ -1380,7 +1550,7 @@ function InnerCanvas() {
       );
       setSelectedFieldMetadata(selectedMetadata);
     },
-    [setNodes, schema],
+    [pushUndo, setNodes, schema],
   );
 
   const nodeCanvasValue = useMemo<NodeCanvasContextValue>(
@@ -1399,6 +1569,9 @@ function InnerCanvas() {
       onFieldConnectDrop: handleFieldConnectDrop,
       onFieldToNodeConnectDrop: handleFieldToNodeConnectDrop,
       onUpdateDrawingNodeData: handleUpdateDrawingNodeData,
+      onRenameField: handleRenameField,
+      onUpdateFieldTableCell: handleUpdateFieldTableCell,
+      onApplyFieldTablePaste: handleApplyFieldTablePaste,
     }),
     [
       schema,
@@ -1415,6 +1588,9 @@ function InnerCanvas() {
       handleFieldConnectDrop,
       handleFieldToNodeConnectDrop,
       handleUpdateDrawingNodeData,
+      handleRenameField,
+      handleUpdateFieldTableCell,
+      handleApplyFieldTablePaste,
     ],
   );
 
@@ -1729,6 +1905,7 @@ function InnerCanvas() {
   );
 
   const performClearCanvas = useCallback(() => {
+    pushUndo();
     setNodes([]);
     setEdges([]);
     setActiveTouchpointId(null);
@@ -1750,7 +1927,7 @@ function InnerCanvas() {
     }
     setClearDialogOpen(false);
     toast.success("Canvas cleared");
-  }, [setNodes, setEdges]);
+  }, [pushUndo, setNodes, setEdges]);
 
   const handleClearRequest = () => {
     setClearDialogOpen(true);
@@ -1839,6 +2016,18 @@ function InnerCanvas() {
 
       const key = event.key.toLowerCase();
 
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      if (key === "y" || (key === "z" && event.shiftKey)) {
+        event.preventDefault();
+        handleRedo();
+        return;
+      }
+
       if (key === "c") {
         const selected = getSelectedCopyableNodes(nodes);
         if (selected.length === 0) return;
@@ -1852,6 +2041,7 @@ function InnerCanvas() {
       if (key === "v") {
         if (clipboardNodesRef.current.length === 0) return;
         event.preventDefault();
+        pushUndo();
         pasteGenerationRef.current += 1;
         const duplicates = duplicateNodesFromClipboard(
           clipboardNodesRef.current,
@@ -1872,7 +2062,7 @@ function InnerCanvas() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [nodes, drawingMode, activeView, setNodes, clearEdgeSelection]);
+  }, [nodes, drawingMode, activeView, setNodes, clearEdgeSelection, handleUndo, handleRedo, pushUndo]);
 
   useEffect(() => {
     if (!drawingMode) return;
@@ -1928,6 +2118,12 @@ function InnerCanvas() {
         <div className="flex items-center gap-2 shrink-0">
           {activeView === "canvas" && (
             <>
+              <Button variant="outline" size="sm" onClick={handleUndo} title="Undo (Ctrl+Z)">
+                <Undo2 className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleRedo} title="Redo (Ctrl+Y)">
+                <Redo2 className="h-4 w-4" />
+              </Button>
               <Button variant={drawingMode ? "default" : "outline"} size="sm" onClick={toggleDrawingMode}>
                 <PenTool className="mr-1.5 h-4 w-4" /> {drawingMode ? "Drawing" : "Draw"}
               </Button>

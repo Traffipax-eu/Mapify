@@ -22,6 +22,7 @@ import {
   getFieldAttributeDefinitions,
 } from "@/lib/fieldMetadata";
 import { BlockInternalFieldLinks } from "@/components/nodes/BlockInternalFieldLinks";
+import { EditableFieldTable } from "@/components/nodes/EditableFieldTable";
 import {
   countFieldsInGroup,
   countFieldsInSection,
@@ -44,7 +45,6 @@ import {
   toggleSectionCollapsed,
 } from "@/lib/nodeSections";
 import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons";
-import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import { BRAND } from "@/lib/brand";
 import {
   beginFieldConnectionDrag,
@@ -106,7 +106,7 @@ export type SystemNodeData = {
 
 function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeData>) {
   const data: SystemNodeData = rawData ?? { label: "System" };
-  const { schema, onUpdateNodeData, onDeleteNode, onFieldSelect, onDeleteField, onFieldConnectDrop } =
+  const { schema, onUpdateNodeData, onDeleteNode, onFieldSelect, onDeleteField, onFieldConnectDrop, onRenameField, onUpdateFieldTableCell, onApplyFieldTablePaste } =
     useNodeCanvas();
   const updateNodeInternals = useUpdateNodeInternals();
   const { hasLineage, lineageNodeIds, activeFieldIdsByNode, impactNodeIds, anchorNodeId, highlightedNodeIds } =
@@ -407,56 +407,52 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     update((d) => ({ ...d, icon }));
   };
 
-  const renderFieldList = (sectionFields: Field[]) => (
-    <div className={tableExpanded ? "system-node__table" : "system-node__field-list"}>
-      {tableExpanded && (
-        <div
-          className="system-node__field-row-outer system-node__field-row-outer--table system-node__table-header-row"
-          style={fullTableGridStyle}
-        >
-          <div className="system-node__field-handle-col system-node__field-handle-col--spacer" aria-hidden />
-          <div className="system-node__table-cell system-node__table-cell--name system-node__table-cell--header">
-            Field
-          </div>
-          {tableColumns.map((column) => (
-            <div
-              key={column.id}
-              className="system-node__table-cell system-node__table-cell--header"
-              title={SCHEMA_SCOPE_LABELS.group.columnTooltip}
-            >
-              {column.name}
-            </div>
-          ))}
-          <div className="system-node__table-cell system-node__table-cell--actions system-node__table-cell--header" />
-          <div className="system-node__field-handle-col system-node__field-handle-col--spacer" aria-hidden />
-        </div>
-      )}
-
-      {tableExpanded && tableColumns.length === 0 && sectionFields.length > 0 && (
-        <p className="system-node__table-empty-hint nodrag nopan">
-          Add field attributes in the schema editor to show columns here.
-        </p>
-      )}
-
-      {sectionFields.map((field) => (
-        <FieldRow
-          key={field.id}
+  const renderFieldList = (sectionFields: Field[], sectionId: string, groupId?: string) => {
+    if (tableExpanded) {
+      return (
+        <EditableFieldTable
           nodeId={id}
-          field={field}
-          variant={tableExpanded ? "expanded" : "compact"}
-          fullTableGridStyle={fullTableGridStyle}
-          tableColumns={tableColumns}
+          sectionId={sectionId}
+          groupId={groupId}
+          fields={sectionFields}
+          columns={tableColumns}
           fieldProperties={fieldAttributeDefinitions}
-          isActive={activeFieldIds.has(field.id)}
-          isFaded={fieldLineageActive && !activeFieldIds.has(field.id)}
+          fullTableGridStyle={fullTableGridStyle}
+          activeFieldIds={activeFieldIds}
+          fieldLineageActive={fieldLineageActive}
           onFieldSelect={onFieldSelect}
           onDeleteField={onDeleteField}
           onFieldReorder={reorderFields}
           onFieldConnectDrop={onFieldConnectDrop}
+          onUpdateFieldLabel={onRenameField}
+          onUpdateFieldCell={onUpdateFieldTableCell}
+          onApplyTablePaste={onApplyFieldTablePaste}
         />
-      ))}
-    </div>
-  );
+      );
+    }
+
+    return (
+      <div className="system-node__field-list">
+        {sectionFields.map((field) => (
+          <FieldRow
+            key={field.id}
+            nodeId={id}
+            field={field}
+            variant="compact"
+            fullTableGridStyle={fullTableGridStyle}
+            tableColumns={tableColumns}
+            fieldProperties={fieldAttributeDefinitions}
+            isActive={activeFieldIds.has(field.id)}
+            isFaded={fieldLineageActive && !activeFieldIds.has(field.id)}
+            onFieldSelect={onFieldSelect}
+            onDeleteField={onDeleteField}
+            onFieldReorder={reorderFields}
+            onFieldConnectDrop={onFieldConnectDrop}
+          />
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div
@@ -705,11 +701,15 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                   {!sectionCollapsed && (
                     <div className="system-node__section-body">
                       {ungroupedFields.length === 0 && sectionGroups.length === 0 ? (
+                        tableExpanded ? (
+                          renderFieldList([], section.id)
+                        ) : (
                         <div className="system-node__section-empty nodrag nopan">
                           No fields yet — add below or Alt+drag fields here
                         </div>
+                        )
                       ) : (
-                        ungroupedFields.length > 0 && renderFieldList(ungroupedFields)
+                        ungroupedFields.length > 0 && renderFieldList(ungroupedFields, section.id)
                       )}
 
                       {sectionGroups.map((group) => {
@@ -790,11 +790,15 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                             {!groupCollapsed && (
                               <div className="system-node__group-body">
                                 {groupFields.length === 0 ? (
+                                  tableExpanded ? (
+                                    renderFieldList([], section.id, group.id)
+                                  ) : (
                                   <div className="system-node__group-empty nodrag nopan">
                                     No fields yet — add below or Alt+drag fields here
                                   </div>
+                                  )
                                 ) : (
-                                  renderFieldList(groupFields)
+                                  renderFieldList(groupFields, section.id, group.id)
                                 )}
                               </div>
                             )}

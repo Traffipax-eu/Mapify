@@ -1240,6 +1240,40 @@
   font-weight: 600;
   color: var(--color-foreground);
 }
+.system-node__table-cell-button {
+  display: block;
+  width: 100%;
+  min-height: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: text;
+  border-radius: 4px;
+}
+.system-node__table-cell-button:hover,
+.system-node__table-cell-button:focus-visible {
+  outline: 1px solid color-mix(in oklch, var(--color-primary) 45%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in oklch, var(--color-primary) 6%, transparent);
+}
+.system-node__table-cell-input {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  border: 1px solid color-mix(in oklch, var(--color-primary) 50%, var(--color-border));
+  border-radius: 4px;
+  padding: 2px 4px;
+  background: var(--color-background);
+}
+.system-node__table--editable:focus {
+  outline: 1px solid color-mix(in oklch, var(--color-primary) 35%, transparent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
 .system-node__table-cell--actions {
   justify-content: flex-end;
   gap: 2px;

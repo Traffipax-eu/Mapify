@@ -24,6 +24,14 @@ export type NodeCanvasContextValue = {
     source: { nodeId: string; fieldId: string },
     targetNodeId: string,
   ) => void;
+  onRenameField: (nodeId: string, fieldId: string, label: string) => void;
+  onUpdateFieldTableCell: (nodeId: string, fieldId: string, columnId: string, value: string) => void;
+  onApplyFieldTablePaste: (
+    nodeId: string,
+    sectionId: string,
+    groupId: string | undefined,
+    plan: import("@/lib/tableClipboard").TablePastePlan,
+  ) => void;
   onUpdateDrawingNodeData: (
     nodeId: string,
     updater: (data: Record<string, unknown>) => Record<string, unknown>,
