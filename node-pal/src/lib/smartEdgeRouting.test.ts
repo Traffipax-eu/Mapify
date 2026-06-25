@@ -52,20 +52,22 @@ describe("smartEdgeRouting", () => {
     expect(terminals.target.x).toBe(getNodeBounds(target, nodes).right);
   });
 
-  it("preserves field-row Y from handle positions on the chosen border", () => {
-    const source = makeNode("a", 0, 0);
-    const target = makeNode("b", 500, 0);
-    const fieldY = 142;
+  it("pins field target entry to the field row instead of the block top edge", () => {
+    const source = makeNode("a", 200, 0, 120, 80);
+    const target = makeNode("b", 180, 200, 320, 200);
+    const fieldY = 280;
 
     const terminals = resolveSmartEdgeTerminals(
       source,
       target,
-      { x: 320, y: fieldY },
-      { x: 500, y: fieldY + 4 },
+      { x: 260, y: 80 },
+      { x: 180, y: fieldY },
       [source, target],
+      { targetFieldId: "f_1" },
     );
 
-    expect(terminals.source.y).toBe(fieldY);
-    expect(terminals.target.y).toBe(fieldY + 4);
+    expect(terminals.targetPosition).toBe(Position.Left);
+    expect(terminals.target.x).toBe(getNodeBounds(target, [source, target]).left);
+    expect(terminals.target.y).toBe(fieldY);
   });
 });

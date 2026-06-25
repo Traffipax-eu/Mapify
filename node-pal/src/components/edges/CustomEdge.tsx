@@ -97,8 +97,23 @@ function CustomEdgeImpl({
         { x: sourceX, y: sourceY },
         { x: targetX, y: targetY },
         nodes,
+        {
+          sourceFieldId: data?.sourceFieldId ?? null,
+          targetFieldId: data?.targetFieldId ?? null,
+        },
       ),
-    [nodeLookup, source, targetId, sourceX, sourceY, targetX, targetY, nodes],
+    [
+      nodeLookup,
+      source,
+      targetId,
+      sourceX,
+      sourceY,
+      targetX,
+      targetY,
+      nodes,
+      data?.sourceFieldId,
+      data?.targetFieldId,
+    ],
   );
 
   const routingSource: FlowPoint = smartTerminals.source;

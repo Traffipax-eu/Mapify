@@ -161,6 +161,60 @@ export async function listProjectVersions(projectId: string, sheetId?: string): 
   return (data ?? []).map(mapVersionRow);
 }
 
+/** Remove a single saved version from cloud history (only within the open project/sheet). */
+export async function deleteProjectVersion(
+  versionId: string,
+  scope: { projectId: string; sheetId: string },
+): Promise<void> {
+  const supabase = requireSupabase();
+  const { data, error } = await supabase
+    .from("project_versions")
+    .delete()
+    .eq("id", versionId)
+    .eq("project_id", scope.projectId)
+    .eq("sheet_id", scope.sheetId)
+    .select("id");
+
+  assertNoSupabaseError(error);
+  if (!data?.length) {
+    throw new Error("This version is not part of the project and sheet you currently have open.");
+  }
+}
+
+/**
+ * Remove all cloud data for one project (versions, members, project row, encrypted snapshots).
+ * Only the row matching projectId is deleted — other cloud projects are untouched.
+ * Local Dexie workspace is not affected.
+ */
+export async function deleteCloudProject(
+  projectId: string,
+  scope: { projectName: string },
+): Promise<void> {
+  const supabase = requireSupabase();
+  const { data: project, error: fetchError } = await supabase
+    .from("projects")
+    .select("id, name")
+    .eq("id", projectId)
+    .maybeSingle();
+
+  assertNoSupabaseError(fetchError);
+  if (!project) {
+    return;
+  }
+
+  const { error: projectError } = await supabase.from("projects").delete().eq("id", projectId);
+  assertNoSupabaseError(projectError);
+
+  const snapshotNames = new Set([scope.projectName.trim(), project.name.trim()].filter(Boolean));
+  for (const name of snapshotNames) {
+    const { error: snapError } = await supabase
+      .from("mapify_snapshots")
+      .delete()
+      .eq("project_name", name);
+    assertNoSupabaseError(snapError);
+  }
+}
+
 export async function inviteProjectMember(params: {
   projectId: string;
   projectName: string;

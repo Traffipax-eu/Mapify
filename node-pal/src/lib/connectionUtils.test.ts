@@ -5,6 +5,7 @@ import {
   normalizeConnection,
   parentSourceHandle,
   parentTargetHandle,
+  upgradeConnectionWithFieldTarget,
 } from "./connectionUtils";
 
 describe("normalizeConnection", () => {
@@ -64,5 +65,25 @@ describe("normalizeConnection", () => {
     expect(result).not.toBeNull();
     expect(result?.sourceFieldId).toBeNull();
     expect(result?.targetFieldId).toBe("f_3");
+  });
+
+  it("upgrades parent-to-parent to parent-to-field when pointer is over a field row", () => {
+    const conn = normalizeConnection({
+      source: "node-a",
+      target: "node-b",
+      sourceHandle: parentSourceHandle("node-a"),
+      targetHandle: parentTargetHandle("node-b"),
+    });
+
+    expect(conn).not.toBeNull();
+
+    const upgraded = upgradeConnectionWithFieldTarget(conn!, 0, 0, () => ({
+      nodeId: "node-b",
+      fieldId: "f_email",
+    }));
+
+    expect(upgraded.targetFieldId).toBe("f_email");
+    expect(upgraded.targetHandle).toBe(fieldTargetHandle("node-b", "f_email"));
+    expect(upgraded.isParentToParent).toBe(false);
   });
 });

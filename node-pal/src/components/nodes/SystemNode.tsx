@@ -591,10 +591,10 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
 
       <PlusHandle
         type="target"
-        position={Position.Left}
-        id={`parent-target-${id}`}
+        position={Position.Top}
+        id={`parent-target-${id}-top`}
         variant="parent"
-        className="system-node__parent-handle system-node__parent-handle--target"
+        className="system-node__parent-handle system-node__parent-handle--target-top"
       />
       <PlusHandle
         type="source"

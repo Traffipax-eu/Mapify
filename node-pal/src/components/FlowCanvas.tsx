@@ -18,6 +18,7 @@ import ReactFlow, {
   type OnEdgesDelete,
   type OnNodesDelete,
   type ReactFlowInstance,
+  type OnConnectStartParams,
   ReactFlowProvider,
   Panel,
   useUpdateNodeInternals,
@@ -105,6 +106,8 @@ import {
   fieldSourceHandle,
   fieldTargetHandle,
   parentTargetHandle,
+  parentSourceHandle,
+  upgradeConnectionWithFieldTarget,
   isFieldConnectionHandle,
   isParentConnectionHandle,
   type NormalizedConnection,
@@ -112,6 +115,7 @@ import {
 import {
   finishFieldConnectionDrag,
   tryCommitFieldConnectionDragEnd,
+  resolveFieldConnectionTargetFromPoint,
 } from "@/lib/fieldConnectionDnD";
 import {
   cloneNodesForClipboard,
@@ -266,6 +270,8 @@ function InnerCanvas() {
   }, [selectedNodeId, sidebarSelection, clearMetadataSelection]);
   const { getIntersectingNodes } = useReactFlow();
   const connectEndPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const pendingConnectRef = useRef<OnConnectStartParams | null>(null);
+  const connectCommittedRef = useRef(false);
   const lastPointerRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const [encryptionModalOpen, setEncryptionModalOpen] = useState(false);
   const [encryptionMode, setEncryptionMode] = useState<EncryptionModalMode>("encrypt");
@@ -556,12 +562,48 @@ function InnerCanvas() {
     [pushUndo, setEdges],
   );
 
-  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent) => {
-    const clientX = "clientX" in event ? event.clientX : event.changedTouches[0]?.clientX ?? 0;
-    const clientY = "clientY" in event ? event.clientY : event.changedTouches[0]?.clientY ?? 0;
-    connectEndPosRef.current = { x: clientX, y: clientY };
-    lastPointerRef.current = { x: clientX, y: clientY };
+  const onConnectStart = useCallback((_event: React.MouseEvent | React.TouchEvent, params: OnConnectStartParams) => {
+    pendingConnectRef.current = params;
+    connectCommittedRef.current = false;
   }, []);
+
+  const onConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent) => {
+      const clientX = "clientX" in event ? event.clientX : event.changedTouches[0]?.clientX ?? 0;
+      const clientY = "clientY" in event ? event.clientY : event.changedTouches[0]?.clientY ?? 0;
+      connectEndPosRef.current = { x: clientX, y: clientY };
+      lastPointerRef.current = { x: clientX, y: clientY };
+
+      if (connectCommittedRef.current) {
+        pendingConnectRef.current = null;
+        return;
+      }
+
+      const pending = pendingConnectRef.current;
+      pendingConnectRef.current = null;
+      if (!pending?.nodeId || !pending.handleId || pending.handleType !== "source") return;
+      if (!isParentConnectionHandle(pending.handleId)) return;
+
+      const fieldTarget = resolveFieldConnectionTargetFromPoint(clientX, clientY);
+      if (!fieldTarget || fieldTarget.nodeId === pending.nodeId) return;
+
+      const sourceHandle = pending.handleId.startsWith("parent-source-")
+        ? pending.handleId
+        : parentSourceHandle(pending.nodeId);
+
+      createEdgeFromConnection({
+        sourceNodeId: pending.nodeId,
+        targetNodeId: fieldTarget.nodeId,
+        sourceHandle,
+        targetHandle: fieldTargetHandle(fieldTarget.nodeId, fieldTarget.fieldId),
+        sourceFieldId: null,
+        targetFieldId: fieldTarget.fieldId,
+        isFieldToField: false,
+        isParentToParent: false,
+      });
+    },
+    [createEdgeFromConnection],
+  );
 
   useEffect(() => {
     const trackPointer = (event: MouseEvent) => {
@@ -662,8 +704,18 @@ function InnerCanvas() {
 
   const onConnect = useCallback(
     (params: Connection) => {
-      const conn = normalizeConnection(params);
+      let conn = normalizeConnection(params);
       if (!conn) return;
+
+      conn = upgradeConnectionWithFieldTarget(
+        conn,
+        lastPointerRef.current.x,
+        lastPointerRef.current.y,
+        resolveFieldConnectionTargetFromPoint,
+      );
+
+      connectCommittedRef.current = true;
+      pendingConnectRef.current = null;
       createEdgeFromConnection(conn);
     },
     [createEdgeFromConnection],
@@ -2629,6 +2681,7 @@ function InnerCanvas() {
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChangeWrapped}
                 onConnect={onConnect}
+                onConnectStart={onConnectStart}
                 onConnectEnd={onConnectEnd}
                 onEdgeUpdate={onEdgeUpdate}
                 onEdgeUpdateStart={onEdgeUpdateStart}
@@ -2758,6 +2811,7 @@ function InnerCanvas() {
         open={versionHistoryOpen}
         onOpenChange={setVersionHistoryOpen}
         projectId={project?.id ?? null}
+        projectName={project?.name ?? "Untitled Project"}
         sheetId={activeSheet?.id ?? null}
         previewVersionId={versionPreview?.id ?? null}
         onPreviewVersion={handlePreviewVersion}

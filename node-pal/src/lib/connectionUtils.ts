@@ -198,3 +198,27 @@ export function normalizeConnection(params: Connection): NormalizedConnection | 
     isParentToParent,
   });
 }
+
+/** When a connection lands on a block but the pointer is over a field row, snap to that field. */
+export function upgradeConnectionWithFieldTarget(
+  conn: NormalizedConnection,
+  clientX: number,
+  clientY: number,
+  resolveField: (x: number, y: number) => { nodeId: string; fieldId: string } | null,
+): NormalizedConnection {
+  if (conn.targetFieldId) return conn;
+
+  const fieldTarget = resolveField(clientX, clientY);
+  if (!fieldTarget || fieldTarget.nodeId !== conn.targetNodeId) return conn;
+
+  const sourceFieldId = conn.sourceFieldId;
+  const targetFieldId = fieldTarget.fieldId;
+
+  return {
+    ...conn,
+    targetHandle: fieldTargetHandle(fieldTarget.nodeId, targetFieldId),
+    targetFieldId,
+    isFieldToField: Boolean(sourceFieldId && targetFieldId),
+    isParentToParent: !sourceFieldId && !targetFieldId,
+  };
+}

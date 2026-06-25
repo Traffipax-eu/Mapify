@@ -65,6 +65,31 @@ export type SmartEdgeTerminals = {
   targetPosition: Position;
 };
 
+export type SmartEdgeOptions = {
+  sourceFieldId?: string | null;
+  targetFieldId?: string | null;
+};
+
+function fieldRowTerminal(
+  bounds: NodeBounds,
+  handlePoint: FlowPoint,
+  role: "source" | "target",
+  peerCenter: FlowPoint,
+): { point: FlowPoint; position: Position } {
+  const y = clamp(handlePoint.y, bounds.top + BORDER_INSET, bounds.bottom - BORDER_INSET);
+  const peerIsLeft = peerCenter.x < bounds.centerX;
+  const position =
+    role === "target"
+      ? peerIsLeft
+        ? Position.Left
+        : Position.Right
+      : peerCenter.x > bounds.centerX
+        ? Position.Right
+        : Position.Left;
+  const x = position === Position.Left ? bounds.left : bounds.right;
+  return { point: { x, y }, position };
+}
+
 /**
  * Draw.io-style closest-side routing: pick exit/entry ports from node centers,
  * then snap to the node border while preserving field-row Y from handle positions.
@@ -75,6 +100,7 @@ export function resolveSmartEdgeTerminals(
   handleSource: FlowPoint,
   handleTarget: FlowPoint,
   nodes?: Node[],
+  options?: SmartEdgeOptions,
 ): SmartEdgeTerminals {
   if (!sourceNode || !targetNode) {
     return {
@@ -89,6 +115,38 @@ export function resolveSmartEdgeTerminals(
   const targetBounds = getNodeBounds(targetNode, nodes);
   const sourceCenter = { x: sourceBounds.centerX, y: sourceBounds.centerY };
   const targetCenter = { x: targetBounds.centerX, y: targetBounds.centerY };
+
+  if (options?.sourceFieldId) {
+    const sourceTerminal = fieldRowTerminal(sourceBounds, handleSource, "source", targetCenter);
+    if (options?.targetFieldId) {
+      const targetTerminal = fieldRowTerminal(targetBounds, handleTarget, "target", sourceCenter);
+      return {
+        source: sourceTerminal.point,
+        target: targetTerminal.point,
+        sourcePosition: sourceTerminal.position,
+        targetPosition: targetTerminal.position,
+      };
+    }
+
+    const targetPosition = inferPortPosition(targetCenter, sourceCenter, "entry");
+    return {
+      source: sourceTerminal.point,
+      target: borderPoint(targetBounds, targetPosition, handleTarget),
+      sourcePosition: sourceTerminal.position,
+      targetPosition,
+    };
+  }
+
+  if (options?.targetFieldId) {
+    const targetTerminal = fieldRowTerminal(targetBounds, handleTarget, "target", sourceCenter);
+    const sourcePosition = inferPortPosition(sourceCenter, targetTerminal.point, "exit");
+    return {
+      source: borderPoint(sourceBounds, sourcePosition, handleSource),
+      target: targetTerminal.point,
+      sourcePosition,
+      targetPosition: targetTerminal.position,
+    };
+  }
 
   const sourcePosition = inferPortPosition(sourceCenter, targetCenter, "exit");
   const targetPosition = inferPortPosition(targetCenter, sourceCenter, "entry");

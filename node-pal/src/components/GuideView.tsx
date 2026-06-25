@@ -2,6 +2,7 @@ import {
   ArrowRightLeft,
   BookMarked,
   Box,
+  Cloud,
   Copy,
   Database,
   FileSpreadsheet,
@@ -13,6 +14,7 @@ import {
   MousePointer2,
   Shield,
   Sparkles,
+  Undo2,
   Ungroup,
 } from "lucide-react";
 import { BRAND } from "@/lib/brand";
@@ -141,7 +143,8 @@ const TOC = [
   { id: "dataflows", label: "Dataflows" },
   { id: "attributes", label: "Attributes" },
   { id: "controls", label: "Canvas Controls" },
-  { id: "sharing", label: "Secure Sharing" },
+  { id: "cloud", label: "Cloud Versions" },
+  { id: "sharing", label: "Sharing & Embed" },
 ] as const;
 
 export function GuideView() {
@@ -193,8 +196,13 @@ export function GuideView() {
                   instantly as you type and press Enter.
                 </li>
                 <li>
-                  Click a field or block to open the <strong>right-hand sidebar</strong> for renaming and custom
-                  attributes.
+                  Click a field or block once to <strong>select</strong> it (fields show a blue
+                  highlight). <strong>Double-click</strong> a block or field to open the metadata
+                  sidebar for editing.
+                </li>
+                <li>
+                  Use the pencil icon on a field row to jump straight into the sidebar without
+                  double-clicking.
                 </li>
                 <li>
                   Empty blocks stay clean: there is no forced &ldquo;General&rdquo; section header until you create
@@ -246,19 +254,29 @@ export function GuideView() {
               </p>
               <ul>
                 <li>
-                  <strong>Minimal connection dots</strong> appear on block sides and on field rows (visible when you
-                  hover a field). Drag from any dot to any compatible dot—direction is flexible.
+                  <strong>Connection dots</strong> appear on block sides and on each field row (left
+                  = in, right = out). Drag from any dot to a compatible target—direction is flexible.
                 </li>
                 <li>
-                  Connect <strong>field to field</strong> for granular lineage (e.g. <code>orders.id</code> →{" "}
-                  <code>warehouse.order_id</code>).
+                  Connect <strong>field → field</strong> for granular lineage, or{" "}
+                  <strong>object ↔ field</strong> in either direction (e.g. JSON file →{" "}
+                  <code>email</code> column).
                 </li>
                 <li>
-                  Connect a field or block to a <strong>Custom Object</strong> by dropping the line anywhere on the
-                  object—the entire card acts as an invisible snap target, so you do not need precise handle aiming.
+                  When connecting from above or below, release over the target field row—the line
+                  snaps to that row instead of the block header.
                 </li>
                 <li>
-                  Click a connection to open edge settings: label, description, line style, and arrow direction.
+                  Drop a field connection onto a <strong>Custom Object</strong> card—the whole object
+                  acts as a snap target.
+                </li>
+                <li>
+                  Click a connection to open edge settings: label, line style, arrows, and bend
+                  points (double-click the line to add elbows).
+                </li>
+                <li>
+                  Use the <strong>Lineage</strong> toolbar after selecting a field to trace upstream
+                  or downstream dependencies.
                 </li>
               </ul>
             </GuideSection>
@@ -300,6 +318,16 @@ export function GuideView() {
             >
               <p>Mapify follows familiar diagramming patterns with a few power-user shortcuts.</p>
               <div className="guide-shortcuts">
+                <div className="guide-shortcut">
+                  <Undo2 className="h-4 w-4 shrink-0 text-[#0067F5]" />
+                  <div>
+                    <p className="font-medium text-foreground">Undo &amp; redo</p>
+                    <p className="text-sm text-muted-foreground">
+                      <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> (or{" "}
+                      <kbd>⌘</kbd> on Mac) for canvas edits in the current session.
+                    </p>
+                  </div>
+                </div>
                 <div className="guide-shortcut">
                   <Copy className="h-4 w-4 shrink-0 text-[#0067F5]" />
                   <div>
@@ -343,38 +371,76 @@ export function GuideView() {
             </GuideSection>
 
             <GuideSection
-              id="sharing"
-              icon={Shield}
-              iconClass="guide-section__icon--green"
-              title="Secure Sharing & Embedding"
+              id="cloud"
+              icon={Cloud}
+              iconClass="guide-section__icon--blue"
+              title="Cloud Version History"
             >
               <p>
-                Share architecture maps without exposing raw diagram data on third-party servers. Mapify uses{" "}
-                <strong>client-side encryption</strong> before anything is uploaded.
+                When Supabase is configured, save <strong>named snapshots</strong> of your sheet to
+                the cloud and restore them later—without overwriting your live local canvas until
+                you choose Restore.
               </p>
               <ul>
                 <li>
-                  <strong>Export Encrypted</strong> (File menu) packages your workspace into a password-protected file.
-                  Only someone with the password can decrypt it—and decryption runs entirely in the browser.
+                  <strong>Save Version</strong> (header) opens a dialog to name the current sheet
+                  snapshot (nodes, edges, schema, drawings).
                 </li>
                 <li>
-                  <strong>Save to Cloud</strong> (when Supabase is configured) uploads ciphertext only. Supabase never
-                  receives your encryption password or plaintext diagram JSON.
+                  <strong>History</strong> lists cloud versions for the active sheet.{" "}
+                  <strong>Preview</strong> loads read-only; <strong>Restore</strong> replaces the
+                  sheet contents.
                 </li>
                 <li>
-                  To load a cloud snapshot, choose it from the list and enter the password locally. Wrong passwords fail
-                  safely without leaking data.
+                  Delete a single version with the trash icon, or use{" "}
+                  <strong>Delete cloud data for &quot;…&quot;</strong> at the bottom of History to
+                  remove cloud data for the project you have open (other projects are untouched).
                 </li>
                 <li>
-                  For read-only stakeholder views, use <strong>visual export</strong> (PNG, JPEG, or PDF) from the File
-                  menu—these are static snapshots that need no decryption.
+                  Cloud version history is separate from <strong>Save to Cloud</strong> in the File
+                  menu—that path stores encrypted ciphertext for password-protected backup.
+                </li>
+              </ul>
+            </GuideSection>
+
+            <GuideSection
+              id="sharing"
+              icon={Shield}
+              iconClass="guide-section__icon--green"
+              title="Sharing, View Links & Embedding"
+            >
+              <p>
+                Share diagrams with teammates or stakeholders. Mapify offers read-only view links,
+                encrypted backups, and embed snippets—pick the mode that fits your audience.
+              </p>
+              <ul>
+                <li>
+                  <strong>Share</strong> (header) generates a <strong>read-only view link</strong>{" "}
+                  anyone can open in the browser (pan &amp; zoom only). Optional password encrypts
+                  the link payload.
+                </li>
+                <li>
+                  <strong>Generate embed snippet</strong> (File menu) builds an iframe URL for
+                  Confluence or internal portals—also read-only, with optional password.
+                </li>
+                <li>
+                  <strong>Export Encrypted</strong> packages your workspace into a password-protected
+                  file. Decryption runs entirely in the browser.
+                </li>
+                <li>
+                  <strong>Save to Cloud</strong> uploads ciphertext only when Supabase is
+                  configured—Supabase never sees your encryption password.
+                </li>
+                <li>
+                  For static decks, use <strong>visual export</strong> (PNG, JPEG, or PDF) from the
+                  File menu.
                 </li>
               </ul>
               <div className="guide-callout">
                 <Lock className="h-4 w-4 shrink-0 text-[#0067F5]" />
                 <p>
-                  Treat your encryption password like a secret key: share it through a separate secure channel from the
-                  snapshot link or file. Mapify cannot recover lost passwords—your data stays zero-knowledge.
+                  View links and embeds are snapshots at generation time—they do not live-sync when
+                  you edit locally. Save a new version or regenerate the link after major changes.
                 </p>
               </div>
             </GuideSection>
