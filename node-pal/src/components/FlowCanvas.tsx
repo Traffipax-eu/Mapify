@@ -42,6 +42,7 @@ import { GlossaryView } from "./GlossaryView";
 import { GuideView } from "./GuideView";
 import { CustomEdge } from "./edges/CustomEdge";
 import { ClearCanvasDialog } from "./ClearCanvasDialog";
+import { NewProjectDialog } from "./NewProjectDialog";
 import { EncryptionModal, type EncryptionModalMode } from "./EncryptionModal";
 import { FileMenu } from "./FileMenu";
 import { WorkspaceBar } from "./WorkspaceBar";
@@ -204,6 +205,9 @@ function InnerCanvas() {
   const [schemaEditorCustomObjectId, setSchemaEditorCustomObjectId] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<"canvas" | "glossary" | "guide">("canvas");
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const suppressAutoSaveRef = useRef(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isVisualExporting, setIsVisualExporting] = useState(false);
@@ -308,6 +312,7 @@ function InnerCanvas() {
     createSheet,
     renameSheet,
     deleteSheet,
+    createProject,
   } = useProjectWorkspace();
 
   const isVersionPreview = versionPreview !== null;
@@ -409,7 +414,7 @@ function InnerCanvas() {
   }, [workspaceHydrated, activeSheet?.id, activeSheet, applySheetToCanvas]);
 
   useEffect(() => {
-    if (!hydrated || !activeSheet) return;
+    if (!hydrated || !activeSheet || suppressAutoSaveRef.current) return;
     workspaceStorage.saveSheetState(activeSheet.id, collectCanvasState());
   }, [nodes, edges, drawings, schema, hydrated, activeSheet, collectCanvasState]);
 
@@ -2274,6 +2279,63 @@ function InnerCanvas() {
     [deleteSheet, collectCanvasStateAsync, activeSheet?.id],
   );
 
+  const resetEditorUiState = useCallback(() => {
+    setVersionPreview(null);
+    setVersionHistoryOpen(false);
+    setSidebarOpen(false);
+    setSchemaEditorGroupId(null);
+    setSchemaEditorCustomObjectId(null);
+    setSelectedNodeId(null);
+    setSelectedFieldId(null);
+    setSelectedNodeLabel(null);
+    setSelectedFieldLabel(null);
+    setSelectedNodeMetadata(null);
+    setSelectedFieldMetadata(null);
+    setLineageTrace(null);
+    setActiveTouchpointId(null);
+    setImpactNodeIds(new Set());
+    setActiveView("canvas");
+  }, []);
+
+  const handleStartNewProject = useCallback(
+    async (saveBeforeCreate: boolean) => {
+      if (isCreatingProject) return;
+
+      setIsCreatingProject(true);
+      suppressAutoSaveRef.current = true;
+      try {
+        const state = await createProject({
+          saveCurrent: collectCanvasStateAsync,
+          saveBeforeCreate,
+        });
+        if (!state) return;
+
+        resetEditorUiState();
+        loadedSheetIdRef.current = state.activeSheet.id;
+        applySheetToCanvas(state.activeSheet);
+        setNewProjectDialogOpen(false);
+        toast.success(
+          saveBeforeCreate
+            ? `Saved "${project?.name ?? "project"}" and started a new project`
+            : "Started a new project",
+        );
+      } catch {
+        toast.error("Failed to create new project");
+      } finally {
+        suppressAutoSaveRef.current = false;
+        setIsCreatingProject(false);
+      }
+    },
+    [
+      isCreatingProject,
+      createProject,
+      collectCanvasStateAsync,
+      resetEditorUiState,
+      applySheetToCanvas,
+      project?.name,
+    ],
+  );
+
   const performClearCanvas = useCallback(() => {
     pushUndo();
     setNodes([]);
@@ -2587,6 +2649,7 @@ function InnerCanvas() {
             isVisualExporting={isVisualExporting}
             cloudConfigured={isSupabaseConfigured()}
             onLocalSave={handleSaveProject}
+            onNewProject={() => setNewProjectDialogOpen(true)}
             onSaveToCloud={() => openEncryptModal("cloud")}
             onLoadFromCloud={() => {
               if (!isSupabaseConfigured()) {
@@ -2610,6 +2673,7 @@ function InnerCanvas() {
         sheets={sheets}
         activeSheetId={activeSheet?.id ?? null}
         onProjectNameChange={setProjectName}
+        onNewProject={() => setNewProjectDialogOpen(true)}
         onSheetSelect={handleSheetSelect}
         onSheetRename={renameSheet}
         onSheetCreate={handleSheetCreate}
@@ -2765,6 +2829,16 @@ function InnerCanvas() {
         onConfirmClear={performClearCanvas}
       />
 
+      <NewProjectDialog
+        open={newProjectDialogOpen}
+        projectName={project?.name ?? "Untitled Project"}
+        isCreating={isCreatingProject}
+        onOpenChange={setNewProjectDialogOpen}
+        onCancel={() => setNewProjectDialogOpen(false)}
+        onSaveAndContinue={() => void handleStartNewProject(true)}
+        onContinueWithoutSaving={() => void handleStartNewProject(false)}
+      />
+
       <NodeNameDialog
         open={nodeNameDialogOpen}
         defaultName={pendingNodeDrop?.item.name ?? ""}
@@ -2779,6 +2853,7 @@ function InnerCanvas() {
       <CloudSnapshotsDialog
         open={cloudSnapshotsOpen}
         onOpenChange={setCloudSnapshotsOpen}
+        projectName={project?.name ?? "Untitled Project"}
         onSelect={handleCloudSnapshotSelect}
       />
 

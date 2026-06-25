@@ -392,9 +392,13 @@ export function GuideView() {
                   sheet contents.
                 </li>
                 <li>
+                  <strong>Load from Cloud</strong> (File menu) lists encrypted backups for the
+                  project you have open only — not other projects.
+                </li>
+                <li>
                   Delete a single version with the trash icon, or use{" "}
                   <strong>Delete cloud data for &quot;…&quot;</strong> at the bottom of History to
-                  remove cloud data for the project you have open (other projects are untouched).
+                  remove all cloud data for the open project (other projects are untouched).
                 </li>
                 <li>
                   Cloud version history is separate from <strong>Save to Cloud</strong> in the File

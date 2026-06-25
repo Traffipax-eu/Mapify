@@ -3,13 +3,14 @@ import type { Project, Sheet } from "@/lib/workspaceStorage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { Plus, X } from "lucide-react";
+import { Plus, X, FilePlus } from "lucide-react";
 
 interface WorkspaceBarProps {
   project: Project | null;
   sheets: Sheet[];
   activeSheetId: string | null;
   onProjectNameChange: (name: string) => void;
+  onNewProject: () => void;
   onSheetSelect: (sheetId: string) => void;
   onSheetRename: (sheetId: string, name: string) => void;
   onSheetCreate: () => void;
@@ -21,6 +22,7 @@ export function WorkspaceBar({
   sheets,
   activeSheetId,
   onProjectNameChange,
+  onNewProject,
   onSheetSelect,
   onSheetRename,
   onSheetCreate,
@@ -71,6 +73,17 @@ export function WorkspaceBar({
           className="h-8 w-48 max-w-full border-transparent bg-transparent px-2 text-sm font-semibold shadow-none focus-visible:border-border focus-visible:bg-background"
           aria-label="Project name"
         />
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 shrink-0 text-xs"
+          onClick={onNewProject}
+        >
+          <FilePlus className="mr-1.5 h-3.5 w-3.5" />
+          New project
+        </Button>
 
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {sheets.map((sheet) => {

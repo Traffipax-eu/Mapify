@@ -20,6 +20,7 @@ import {
   FileImage,
   FileType,
   FolderOpen,
+  FilePlus,
   Lock,
   Save,
   Shield,
@@ -32,6 +33,7 @@ interface FileMenuProps {
   isVisualExporting: boolean;
   cloudConfigured: boolean;
   onLocalSave: () => void;
+  onNewProject: () => void;
   onSaveToCloud: () => void;
   onLoadFromCloud: () => void;
   onImportJson: (file: File) => void;
@@ -48,6 +50,7 @@ export function FileMenu({
   isVisualExporting,
   cloudConfigured,
   onLocalSave,
+  onNewProject,
   onSaveToCloud,
   onLoadFromCloud,
   onImportJson,
@@ -101,6 +104,10 @@ export function FileMenu({
               <Save className="mr-2 h-4 w-4" />
             )}
             {saveSuccess ? "Saved!" : "Save (local)"}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onNewProject}>
+            <FilePlus className="mr-2 h-4 w-4" />
+            New project…
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onSaveToCloud} disabled={!cloudConfigured}>
             <CloudUpload className="mr-2 h-4 w-4" />

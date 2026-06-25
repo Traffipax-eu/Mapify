@@ -17,6 +17,11 @@ export interface UseProjectWorkspaceResult {
   createSheet: (saveCurrent: () => Promise<SheetCanvasState>) => Promise<Sheet | null>;
   renameSheet: (sheetId: string, name: string) => Promise<void>;
   deleteSheet: (sheetId: string, saveCurrent: () => Promise<SheetCanvasState>) => Promise<void>;
+  createProject: (options: {
+    saveCurrent: () => Promise<SheetCanvasState>;
+    saveBeforeCreate: boolean;
+    name?: string;
+  }) => Promise<WorkspaceState | null>;
   refreshWorkspace: () => Promise<void>;
 }
 
@@ -112,6 +117,26 @@ export function useProjectWorkspace(): UseProjectWorkspaceResult {
     [activeSheet, project, applyWorkspace],
   );
 
+  const createProject = useCallback(
+    async (options: {
+      saveCurrent: () => Promise<SheetCanvasState>;
+      saveBeforeCreate: boolean;
+      name?: string;
+    }) => {
+      if (!activeSheet) return null;
+
+      if (options.saveBeforeCreate) {
+        const currentState = await options.saveCurrent();
+        await workspaceStorage.saveSheetState(activeSheet.id, currentState);
+      }
+
+      const state = await workspaceStorage.createProject(options.name);
+      applyWorkspace(state);
+      return state;
+    },
+    [activeSheet, applyWorkspace],
+  );
+
   return {
     hydrated,
     project,
@@ -122,6 +147,7 @@ export function useProjectWorkspace(): UseProjectWorkspaceResult {
     createSheet,
     renameSheet,
     deleteSheet,
+    createProject,
     refreshWorkspace,
   };
 }

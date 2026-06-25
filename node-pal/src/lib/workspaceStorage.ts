@@ -248,6 +248,34 @@ export const workspaceStorage = {
   async getSheetsForProject(projectId: string): Promise<Sheet[]> {
     return workspaceDb.sheets.where("projectId").equals(projectId).sortBy("order");
   },
+
+  async createProject(name?: string): Promise<WorkspaceState> {
+    const projectId = newId("proj");
+    const sheetId = newId("sheet");
+    const now = Date.now();
+    const project: Project = {
+      id: projectId,
+      name: name?.trim() || "Untitled Project",
+      createdAt: now,
+      updatedAt: now,
+      activeSheetId: sheetId,
+    };
+    const sheet: Sheet = {
+      id: sheetId,
+      projectId,
+      name: "Sheet 1",
+      order: 0,
+      nodes: [],
+      edges: [],
+      schema: { ...DEFAULT_SCHEMA, timestamp: now },
+      updatedAt: now,
+    };
+
+    await workspaceDb.projects.add(project);
+    await workspaceDb.sheets.add(sheet);
+
+    return { project, sheets: [sheet], activeSheet: sheet };
+  },
 };
 
 export default workspaceDb;
