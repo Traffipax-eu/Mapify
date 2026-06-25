@@ -75,27 +75,30 @@ function DiagramEmbedCanvasInner({ payload, className }: Props) {
 
   const hasLineage = lineageAnchor !== null;
 
-  const systemLineageNodeIds = useMemo(() => {
+  const lineageHighlightedNodeIds = useMemo(() => {
     const ids = new Set<string>();
+    if (!lineageAnchor) return ids;
+    if (lineageAnchor.nodeId) ids.add(lineageAnchor.nodeId);
     for (const nodeId of lineage.nodeIds) {
-      const node = nodes.find((item) => item.id === nodeId);
-      if (node?.type === "system" || node?.type === "customObject") {
+      const fieldIds = lineage.fieldIdsByNode.get(nodeId);
+      if (!fieldIds || fieldIds.size === 0) {
         ids.add(nodeId);
       }
     }
     return ids;
-  }, [lineage.nodeIds, nodes]);
+  }, [lineageAnchor, lineage.nodeIds, lineage.fieldIdsByNode]);
 
   const lineageContextValue = useMemo<LineageContextValue>(
     () => ({
       hasLineage,
+      lineageDirection: lineageAnchor ? "upstream" : null,
       lineageNodeIds: lineage.nodeIds,
-      activeFieldIdsByNode: lineage.fieldIdsByNode,
+      highlightedFieldsByNode: lineage.fieldIdsByNode,
       impactNodeIds: new Set(),
       anchorNodeId: lineageAnchor?.nodeId ?? null,
-      highlightedNodeIds: systemLineageNodeIds,
+      highlightedNodeIds: lineageHighlightedNodeIds,
     }),
-    [hasLineage, lineage, lineageAnchor, systemLineageNodeIds],
+    [hasLineage, lineage, lineageAnchor, lineageHighlightedNodeIds],
   );
 
   const displayedEdges = useMemo(
@@ -147,6 +150,8 @@ function DiagramEmbedCanvasInner({ payload, className }: Props) {
       schema,
       edges,
       selectedEdgeId: null,
+      selectedNodeId: lineageAnchor?.nodeId ?? null,
+      selectedFieldId: lineageAnchor?.fieldId ?? null,
       lineageEdgeIds: lineage.edgeIds,
       hasLineage: lineageAnchor !== null,
       onSelectEdge: () => undefined,
@@ -154,6 +159,7 @@ function DiagramEmbedCanvasInner({ payload, className }: Props) {
       onUpdateStickyNoteData: () => undefined,
       onDeleteNode: () => undefined,
       onFieldSelect: handleFieldSelect,
+      onFieldEdit: handleFieldSelect,
       onDeleteField: () => undefined,
       onFieldConnectDrop: () => undefined,
       onFieldToNodeConnectDrop: () => undefined,
@@ -204,13 +210,14 @@ function DiagramEmbedCanvasInner({ payload, className }: Props) {
             panOnScroll
             zoomOnScroll
             zoomOnPinch
-            minZoom={0.15}
-            maxZoom={2}
+            minZoom={0.05}
+            maxZoom={4}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
             proOptions={{ hideAttribution: true }}
             defaultEdgeOptions={{
               type: "custom",
+              data: { pathType: "step" },
               markerEnd: {
                 type: MarkerType.ArrowClosed,
                 width: 26,

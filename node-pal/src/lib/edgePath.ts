@@ -3,7 +3,7 @@ import { getSmoothStepPath, Position } from "reactflow";
 export type FlowPoint = { x: number; y: number };
 
 /** Rounded corners on auto-routed elbows (draw.io uses 0; we keep a subtle radius). */
-export const ROUTE_BORDER_RADIUS = 6;
+export const ROUTE_BORDER_RADIUS = 8;
 
 const MIN_ROUTE_OFFSET = 32;
 const MAX_ROUTE_OFFSET = 72;
@@ -19,11 +19,11 @@ export function inferPortPosition(
 
   if (Math.abs(dx) >= Math.abs(dy)) {
     if (role === "exit") return dx >= 0 ? Position.Right : Position.Left;
-    return dx >= 0 ? Position.Left : Position.Right;
+    return dx >= 0 ? Position.Right : Position.Left;
   }
 
   if (role === "exit") return dy >= 0 ? Position.Bottom : Position.Top;
-  return dy >= 0 ? Position.Top : Position.Bottom;
+  return dy >= 0 ? Position.Bottom : Position.Top;
 }
 
 /**

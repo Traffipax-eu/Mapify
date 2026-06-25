@@ -8,6 +8,8 @@ export type NodeCanvasContextValue = {
   schema: Schema;
   edges: Edge[];
   selectedEdgeId: string | null;
+  selectedNodeId: string | null;
+  selectedFieldId: string | null;
   lineageEdgeIds: Set<string>;
   hasLineage: boolean;
   onSelectEdge: (edgeId: string) => void;
@@ -15,6 +17,7 @@ export type NodeCanvasContextValue = {
   onUpdateStickyNoteData: (nodeId: string, updater: (data: StickyNoteData) => StickyNoteData) => void;
   onDeleteNode: (nodeId: string) => void;
   onFieldSelect: (nodeId: string, fieldId: string) => void;
+  onFieldEdit: (nodeId: string, fieldId: string) => void;
   onDeleteField: (nodeId: string, fieldId: string) => void;
   onFieldConnectDrop: (
     source: { nodeId: string; fieldId: string },

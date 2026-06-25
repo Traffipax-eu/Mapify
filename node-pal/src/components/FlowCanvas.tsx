@@ -4,6 +4,7 @@ import ReactFlow, {
   Controls,
   MiniMap,
   addEdge,
+  updateEdge,
   ConnectionMode,
   MarkerType,
   SelectionMode,
@@ -33,6 +34,7 @@ import { ShapeNode } from "./nodes/ShapeNode";
 import { ContainerNode } from "./nodes/ContainerNode";
 import { CustomObjectNode } from "./nodes/CustomObjectNode";
 import { MetadataSidebar } from "./MetadataSidebar";
+import { LineageToolbar } from "./LineageToolbar";
 import { EdgeSettingsPanel, applyConnectionSettingsToEdge } from "./EdgeSettingsPanel";
 import { SchemaEditorSidebar } from "./SchemaEditorSidebar";
 import { GlossaryView } from "./GlossaryView";
@@ -55,19 +57,20 @@ import {
   PenTool,
   Undo2,
   Redo2,
+  Share2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { workspaceStorage, type Sheet } from "@/lib/workspaceStorage";
 import { useProjectWorkspace } from "@/hooks/useProjectWorkspace";
 import { buildFileName } from "@/lib/fileNaming";
 import { uploadEncryptedSnapshot, fetchSnapshot, type CloudSnapshotSummary } from "@/lib/cloudStorage";
-import { isSupabaseConfigured } from "@/lib/supabaseClient";
+import { isSupabaseConfigured, formatSupabaseError } from "@/lib/supabaseClient";
 import { exportCanvasImage, exportCanvasPdf } from "@/lib/canvasExport";
 import { decryptData, prepareEncryptedCloudPayload } from "@/utils/encryption";
 import { LineageProvider, type LineageContextValue } from "@/contexts/LineageContext";
 import { NodeCanvasProvider, type NodeCanvasContextValue } from "@/contexts/NodeCanvasContext";
 import { buildMarker } from "@/lib/edgeMarkers";
-import { computeLineage, decorateEdgesForDisplay } from "@/lib/lineageTraversal";
+import { computeLineageTrace, decorateEdgesForDisplay, type LineageTrace } from "@/lib/lineageTraversal";
 import { sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
 import { buildFieldMetadataUpdate, getBlockAttributeDefinitions, getFieldAttributeDefinitions } from "@/lib/fieldMetadata";
 import {
@@ -79,7 +82,7 @@ import {
 } from "@/lib/schemaProperties";
 import { resolveSidebarSelection } from "@/lib/sidebarSelection";
 import { isDrawingToolPayload, isNodeGroupPayload, type NodeGroupDragPayload } from "@/lib/drawingTools";
-import { createDrawingNode } from "@/lib/createDrawingNode";
+import { createDrawingNode, createTextNodeWithContent } from "@/lib/createDrawingNode";
 import { createContainerNode } from "@/lib/createContainerNode";
 import { ensureCustomObjectSchema } from "@/lib/customObjectSchema";
 import { createCustomObjectNode, createConfiguredCustomObjectNode, type CustomObjectNodeData } from "@/lib/createCustomObjectNode";
@@ -103,6 +106,7 @@ import {
   fieldTargetHandle,
   parentTargetHandle,
   isFieldConnectionHandle,
+  isParentConnectionHandle,
   type NormalizedConnection,
 } from "@/lib/connectionUtils";
 import {
@@ -114,10 +118,23 @@ import {
   duplicateNodesFromClipboard,
   getSelectedCopyableNodes,
   isEditableKeyboardTarget,
+  isFieldTablePasteTarget,
+  parseClipboardNodes,
+  serializeNodesToClipboard,
 } from "@/lib/clipboardNodes";
 import { cloneCanvasSnapshot, createCanvasHistoryState } from "@/lib/canvasHistory";
 import { ensureExplicitSections, insertFieldsAtPlacement } from "@/lib/nodeSections";
 import type { TablePastePlan } from "@/lib/tableClipboard";
+import { VersionHistoryDrawer } from "@/components/VersionHistoryDrawer";
+import { SaveVersionDialog } from "@/components/SaveVersionDialog";
+import { ShareProjectDialog } from "@/components/ShareProjectDialog";
+import {
+  saveProjectVersion,
+  type ProjectVersion,
+  type ProjectVersionSnapshot,
+} from "@/lib/projectCollaboration";
+import { getCollaboratorDisplayName } from "@/lib/collaboration/config";
+import type { EdgeChange } from "reactflow";
 
 let nodeIdCounter = 1;
 const nextNodeId = () => `n_${Date.now()}_${nodeIdCounter++}`;
@@ -177,7 +194,7 @@ function InnerCanvas() {
   const [selectedFieldLabel, setSelectedFieldLabel] = useState<string | null>(null);
   const [selectedNodeMetadata, setSelectedNodeMetadata] = useState<MetadataValues | null>(null);
   const [selectedFieldMetadata, setSelectedFieldMetadata] = useState<MetadataValues | null>(null);
-  const [lineageAnchor, setLineageAnchor] = useState<{ nodeId: string; fieldId?: string | null } | null>(null);
+  const [lineageTrace, setLineageTrace] = useState<LineageTrace | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [schemaEditorGroupId, setSchemaEditorGroupId] = useState<string | null>(null);
   const [schemaEditorCustomObjectId, setSchemaEditorCustomObjectId] = useState<string | null>(null);
@@ -194,7 +211,7 @@ function InnerCanvas() {
     setSchemaEditorCustomObjectId(null);
   }, []);
 
-  const schemaEditorOpen = Boolean(schemaEditorGroupId || schemaEditorCustomObjectId);
+  const schemaEditorOpen = Boolean(schemaEditorGroupId);
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -257,6 +274,11 @@ function InnerCanvas() {
   const [isEncrypting, setIsEncrypting] = useState(false);
   const [cloudSnapshotsOpen, setCloudSnapshotsOpen] = useState(false);
   const [embedSnippetOpen, setEmbedSnippetOpen] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
+  const [saveVersionDialogOpen, setSaveVersionDialogOpen] = useState(false);
+  const [versionPreview, setVersionPreview] = useState<ProjectVersion | null>(null);
+  const [isSavingVersion, setIsSavingVersion] = useState(false);
   const [nodeNameDialogOpen, setNodeNameDialogOpen] = useState(false);
   const [customObjectDialogOpen, setCustomObjectDialogOpen] = useState(false);
   const [pendingCustomObjectPosition, setPendingCustomObjectPosition] = useState<{ x: number; y: number } | null>(
@@ -268,7 +290,6 @@ function InnerCanvas() {
     item: NodeGroupDragPayload;
   } | null>(null);
   const loadedSheetIdRef = useRef<string | null>(null);
-  const clipboardNodesRef = useRef<Node[]>([]);
   const pasteGenerationRef = useRef(0);
 
   const {
@@ -283,6 +304,12 @@ function InnerCanvas() {
     deleteSheet,
   } = useProjectWorkspace();
 
+  const isVersionPreview = versionPreview !== null;
+
+  const canvasNodes = isVersionPreview ? (versionPreview.snapshot.nodes as Node[]) : nodes;
+  const canvasEdges = isVersionPreview ? (versionPreview.snapshot.edges as Edge[]) : edges;
+  const canvasReadOnly = isVersionPreview || drawingMode;
+
   // Find downstream dependencies using BFS
   const findDownstreamDependencies = useCallback((nodeId: string): Set<string> => {
     const downstream = new Set<string>();
@@ -291,9 +318,8 @@ function InnerCanvas() {
 
     while (queue.length > 0) {
       const current = queue.shift()!;
-      
-      // Find all edges where current is the source
-      const outgoingEdges = edges.filter((e) => e.source === current);
+
+      const outgoingEdges = canvasEdges.filter((e) => e.source === current);
       
       for (const edge of outgoingEdges) {
         if (!visited.has(edge.target)) {
@@ -305,7 +331,7 @@ function InnerCanvas() {
     }
 
     return downstream;
-  }, [edges]);
+  }, [canvasEdges]);
 
   // Trigger impact analysis
   const triggerImpactAnalysis = useCallback((nodeId: string) => {
@@ -359,7 +385,7 @@ function InnerCanvas() {
         pendingViewportRef.current = sheet.viewport;
       }
       setActiveTouchpointId(null);
-      setLineageAnchor(null);
+      setLineageTrace(null);
       requestAnimationFrame(() => {
         (sheet.nodes as Node[]).forEach((n) => updateNodeInternals(n.id));
       });
@@ -449,6 +475,8 @@ function InnerCanvas() {
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      if (isVersionPreview) return;
+
       const shouldRecord = changes.some(
         (change) =>
           change.type === "remove" ||
@@ -473,7 +501,15 @@ function InnerCanvas() {
 
       onNodesChangeBase(changes);
     },
-    [onNodesChangeBase, pushUndo, setNodes],
+    [onNodesChangeBase, pushUndo, setNodes, isVersionPreview],
+  );
+
+  const onEdgesChangeWrapped = useCallback(
+    (changes: EdgeChange[]) => {
+      if (isVersionPreview) return;
+      onEdgesChange(changes);
+    },
+    [onEdgesChange, isVersionPreview],
   );
 
   const createEdgeFromConnection = useCallback(
@@ -589,31 +625,40 @@ function InnerCanvas() {
     [createEdgeFromConnection],
   );
 
-  const isValidConnection = useCallback(
-    (connection: Connection) => {
-      if (!connection.source || !connection.target) return false;
+  const isValidConnection = useCallback((connection: Connection) => {
+    if (!connection.source || !connection.target) return false;
 
-      const sourceHandle = connection.sourceHandle ?? "";
-      const targetHandle = connection.targetHandle ?? "";
+    const sourceHandle = connection.sourceHandle ?? "";
+    const targetHandle = connection.targetHandle ?? "";
 
-      if (connection.source === connection.target) {
-        if (!isFieldConnectionHandle(sourceHandle) || !isFieldConnectionHandle(targetHandle)) {
-          return false;
-        }
-        const sourceFieldId =
-          parseFieldSourceId(sourceHandle) ?? parseFieldTargetId(sourceHandle);
-        const targetFieldId =
-          parseFieldTargetId(targetHandle) ?? parseFieldSourceId(targetHandle);
-        return Boolean(sourceFieldId && targetFieldId && sourceFieldId !== targetFieldId);
+    if (connection.source === connection.target) {
+      if (!isFieldConnectionHandle(sourceHandle) || !isFieldConnectionHandle(targetHandle)) {
+        return false;
       }
+      const sourceFieldId =
+        parseFieldSourceId(sourceHandle) ?? parseFieldTargetId(sourceHandle);
+      const targetFieldId =
+        parseFieldTargetId(targetHandle) ?? parseFieldSourceId(targetHandle);
+      return Boolean(sourceFieldId && targetFieldId && sourceFieldId !== targetFieldId);
+    }
 
-      if (isFieldConnectionHandle(sourceHandle) || isFieldConnectionHandle(targetHandle)) {
-        return true;
-      }
+    const sourceIsField = isFieldConnectionHandle(sourceHandle);
+    const targetIsField = isFieldConnectionHandle(targetHandle);
+    const sourceIsParent = isParentConnectionHandle(sourceHandle);
+    const targetIsParent = isParentConnectionHandle(targetHandle);
+
+    if ((sourceIsField && targetIsParent) || (sourceIsParent && targetIsField)) {
       return true;
-    },
-    [],
-  );
+    }
+    if (sourceIsField && targetIsField) {
+      return true;
+    }
+    if (sourceIsParent && targetIsParent) {
+      return true;
+    }
+
+    return true;
+  }, []);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -623,6 +668,55 @@ function InnerCanvas() {
     },
     [createEdgeFromConnection],
   );
+
+  const onEdgeUpdateStart = useCallback(() => {
+    pushUndo();
+  }, [pushUndo]);
+
+  const onEdgeUpdate = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      const conn = normalizeConnection(newConnection);
+      if (!conn) return;
+
+      setEdges((eds) => {
+        const next = updateEdge(
+          oldEdge,
+          {
+            ...newConnection,
+            source: conn.sourceNodeId,
+            target: conn.targetNodeId,
+            sourceHandle: conn.sourceHandle,
+            targetHandle: conn.targetHandle,
+          },
+          eds,
+        );
+
+        return next.map((edge) =>
+          edge.id === oldEdge.id
+            ? {
+                ...edge,
+                source: conn.sourceNodeId,
+                target: conn.targetNodeId,
+                sourceHandle: conn.sourceHandle,
+                targetHandle: conn.targetHandle,
+                data: {
+                  ...edge.data,
+                  sourceFieldId: conn.sourceFieldId,
+                  targetFieldId: conn.targetFieldId,
+                  sourceNodeId: conn.sourceNodeId,
+                  targetNodeId: conn.targetNodeId,
+                },
+              }
+            : edge,
+        );
+      });
+    },
+    [setEdges],
+  );
+
+  const onEdgeUpdateEnd = useCallback(() => {
+    // React Flow fires this after a reconnect attempt (even when dropped on invalid target).
+  }, []);
 
   const clearEdgeSelection = useCallback(() => {
     setSelectedEdgeId(null);
@@ -839,9 +933,9 @@ function InnerCanvas() {
   const reroutedEdges = useMemo(() => {
     const rerouted: Edge[] = [];
     
-    for (const edge of edges) {
-      const sourceNode = nodes.find((n) => n.id === edge.source);
-      const targetNode = nodes.find((n) => n.id === edge.target);
+    for (const edge of canvasEdges) {
+      const sourceNode = canvasNodes.find((n) => n.id === edge.source);
+      const targetNode = canvasNodes.find((n) => n.id === edge.target);
       
       if (!sourceNode || !targetNode) {
         rerouted.push(edge);
@@ -874,14 +968,14 @@ function InnerCanvas() {
     }
     
     return rerouted;
-  }, [edges, nodes]);
+  }, [canvasEdges, canvasNodes]);
 
   const lineage = useMemo(
-    () => computeLineage(lineageAnchor, nodes, edges),
-    [lineageAnchor, edges, nodes],
+    () => computeLineageTrace(lineageTrace, nodes, edges),
+    [lineageTrace, edges, nodes],
   );
 
-  const hasLineage = lineageAnchor !== null || selectedEdgeId !== null;
+  const hasLineage = lineageTrace !== null || selectedEdgeId !== null;
 
   const edgeHighlightNodeIds = useMemo(() => {
     const ids = new Set<string>();
@@ -899,7 +993,7 @@ function InnerCanvas() {
     return ids;
   }, [lineage.nodeIds, edgeHighlightNodeIds]);
 
-  const systemLineageNodeIds = useMemo(() => {
+  const lineageHighlightedNodeIds = useMemo(() => {
     const ids = new Set<string>();
     for (const nodeId of activeLineageNodeIds) {
       const node = nodes.find((item) => item.id === nodeId);
@@ -913,13 +1007,21 @@ function InnerCanvas() {
   const lineageContextValue = useMemo<LineageContextValue>(
     () => ({
       hasLineage,
+      lineageDirection: lineageTrace?.direction ?? null,
       lineageNodeIds: activeLineageNodeIds,
-      activeFieldIdsByNode: lineage.fieldIdsByNode,
+      highlightedFieldsByNode: lineage.fieldIdsByNode,
       impactNodeIds,
-      anchorNodeId: lineageAnchor?.nodeId ?? null,
-      highlightedNodeIds: systemLineageNodeIds,
+      anchorNodeId: lineageTrace?.anchor.nodeId ?? null,
+      highlightedNodeIds: lineageHighlightedNodeIds,
     }),
-    [hasLineage, activeLineageNodeIds, lineage, impactNodeIds, lineageAnchor, systemLineageNodeIds],
+    [
+      hasLineage,
+      lineageTrace,
+      activeLineageNodeIds,
+      lineage.fieldIdsByNode,
+      impactNodeIds,
+      lineageHighlightedNodeIds,
+    ],
   );
 
   const displayedEdges = useMemo(
@@ -934,8 +1036,8 @@ function InnerCanvas() {
     [reroutedEdges, collapsedSystemIds, lineage, hasLineage, selectedEdgeId],
   );
 
-  const handleFieldSelect = useCallback(
-    (nodeId: string, fieldId: string) => {
+  const applyFieldSelection = useCallback(
+    (nodeId: string, fieldId: string, openSidebar: boolean) => {
       const node = nodes.find((item) => item?.id === nodeId);
       if (!node || (node.type !== "system" && node.type !== "customObject")) return;
 
@@ -945,7 +1047,6 @@ function InnerCanvas() {
       if (!field) return;
 
       clearEdgeSelection();
-      setLineageAnchor({ nodeId, fieldId });
       setSelectedNodeId(nodeId);
       setSelectedFieldId(fieldId);
       setSelectedNodeLabel(typeof nodeData.label === "string" ? nodeData.label : null);
@@ -955,18 +1056,26 @@ function InnerCanvas() {
         field.metadata && typeof field.metadata === "object" ? { ...field.metadata } : {},
       );
 
-      if (node.type === "customObject") {
-        const objectId = (nodeData as CustomObjectNodeData).objectId;
-        setSchemaEditorGroupId(null);
-        setSchemaEditorCustomObjectId(objectId);
-        setSchema((prev) => ensureCustomObjectSchema(prev, objectId, nodeData.label));
-      } else {
-        closeSchemaEditor();
+      closeSchemaEditor();
+      if (openSidebar) {
+        setSidebarOpen(true);
       }
-
-      setSidebarOpen(true);
     },
     [nodes, clearEdgeSelection, closeSchemaEditor],
+  );
+
+  const handleFieldSelect = useCallback(
+    (nodeId: string, fieldId: string) => {
+      applyFieldSelection(nodeId, fieldId, false);
+    },
+    [applyFieldSelection],
+  );
+
+  const handleFieldEdit = useCallback(
+    (nodeId: string, fieldId: string) => {
+      applyFieldSelection(nodeId, fieldId, true);
+    },
+    [applyFieldSelection],
   );
 
   const handleDeleteField = useCallback(
@@ -1008,12 +1117,15 @@ function InnerCanvas() {
         setSelectedFieldMetadata(null);
         setSidebarOpen(false);
       }
-      if (lineageAnchor?.fieldId === fieldId && lineageAnchor.nodeId === nodeId) {
-        setLineageAnchor(null);
+      if (
+        lineageTrace?.anchor.fieldId === fieldId &&
+        lineageTrace.anchor.nodeId === nodeId
+      ) {
+        setLineageTrace(null);
       }
       toast.success("Field deleted");
     },
-    [setEdges, setNodes, selectedFieldId, lineageAnchor, pushUndo],
+    [setEdges, setNodes, selectedFieldId, lineageTrace, pushUndo],
   );
 
   const handleRenameField = useCallback(
@@ -1069,14 +1181,14 @@ function InnerCanvas() {
       if (selectedNodeId && idSet.has(selectedNodeId)) {
         clearMetadataSelection();
       }
-      if (lineageAnchor && idSet.has(lineageAnchor.nodeId)) {
-        setLineageAnchor(null);
+      if (lineageTrace && idSet.has(lineageTrace.anchor.nodeId)) {
+        setLineageTrace(null);
       }
       if (activeTouchpointId && idSet.has(activeTouchpointId)) {
         setActiveTouchpointId(null);
       }
     },
-    [setEdges, selectedNodeId, lineageAnchor, activeTouchpointId, clearMetadataSelection],
+    [setEdges, selectedNodeId, lineageTrace, activeTouchpointId, clearMetadataSelection],
   );
 
   const handleUpdateNodeData = useCallback(
@@ -1240,7 +1352,7 @@ function InnerCanvas() {
   const handleDeleteNode = useCallback(
     (nodeId: string) => {
       pushUndo();
-      setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+      setNodes((nds) => applySafeNodeRemovals(nds, [nodeId]));
       cleanupAfterNodeDelete([nodeId]);
       toast.success("Block deleted");
     },
@@ -1255,12 +1367,14 @@ function InnerCanvas() {
           ? lastSafeRemovalIdsRef.current
           : requestedIds;
       lastSafeRemovalIdsRef.current = [];
+
+      setNodes((current) => applySafeNodeRemovals(current, ids));
       cleanupAfterNodeDelete(ids);
       if (ids.length > 1) {
         toast.success(`Deleted ${ids.length} items`);
       }
     },
-    [cleanupAfterNodeDelete],
+    [cleanupAfterNodeDelete, setNodes],
   );
 
   const onEdgesDelete: OnEdgesDelete = useCallback(
@@ -1280,30 +1394,54 @@ function InnerCanvas() {
 
   const onNodeClick = useCallback(
     (_e: React.MouseEvent, node: Node) => {
-      const nodeData = (node.data ?? {}) as SystemNodeData & { label?: string; metadata?: MetadataValues };
-
       if (node.type === "touchpoint") {
         setActiveTouchpointId((curr) => (curr === node.id ? null : node.id));
-        setLineageAnchor(null);
+        setLineageTrace(null);
       }
 
       if (
-        node.type !== "system" &&
-        node.type !== "customObject"
+        node.type === "textNode" ||
+        node.type === "shapeNode" ||
+        node.type === "stickyNote" ||
+        node.type === "container"
       ) {
-        if (
-          node.type === "textNode" ||
-          node.type === "shapeNode" ||
-          node.type === "stickyNote" ||
-          node.type === "container"
-        ) {
-          clearMetadataSelection();
-          clearEdgeSelection();
-          closeSchemaEditor();
-          return;
-        }
+        clearMetadataSelection();
         clearEdgeSelection();
         closeSchemaEditor();
+        return;
+      }
+
+      if (node.type === "system" || node.type === "customObject") {
+        // Single click: keep canvas selection for lineage toolbar, but close the properties pane.
+        setSelectedFieldId(null);
+        setSelectedFieldLabel(null);
+        setSelectedFieldMetadata(null);
+        setSelectedNodeId(node.id);
+        setSelectedNodeLabel(
+          typeof (node.data as { label?: string } | undefined)?.label === "string"
+            ? (node.data as { label: string }).label
+            : null,
+        );
+        setSelectedNodeMetadata(null);
+        setSidebarOpen(false);
+        clearEdgeSelection();
+        closeSchemaEditor();
+        return;
+      }
+
+      // Single click: React Flow handles selection for drag/copy; do not open the properties pane.
+      clearMetadataSelection();
+      clearEdgeSelection();
+      closeSchemaEditor();
+    },
+    [clearEdgeSelection, clearMetadataSelection, closeSchemaEditor],
+  );
+
+  const onNodeDoubleClick = useCallback(
+    (_e: React.MouseEvent, node: Node) => {
+      const nodeData = (node.data ?? {}) as SystemNodeData & { label?: string; metadata?: MetadataValues };
+
+      if (node.type !== "system" && node.type !== "customObject") {
         return;
       }
 
@@ -1311,28 +1449,21 @@ function InnerCanvas() {
 
       if (node.type === "customObject") {
         const customData = nodeData as CustomObjectNodeData;
-        setLineageAnchor({ nodeId: node.id, fieldId: null });
         setSelectedNodeId(node.id);
         setSelectedFieldId(null);
         setSelectedNodeLabel(customData.label ?? null);
         setSelectedFieldLabel(null);
         setSelectedNodeMetadata(
-          customData.metadata && typeof customData.metadata === "object"
-            ? { ...customData.metadata }
-            : {},
+          customData.attributes && typeof customData.attributes === "object"
+            ? { ...customData.attributes }
+            : customData.metadata && typeof customData.metadata === "object"
+              ? { ...customData.metadata }
+              : {},
         );
         setSelectedFieldMetadata(null);
-        setSchemaEditorGroupId(null);
-        setSchemaEditorCustomObjectId(customData.objectId);
-        setSchema((prev) => ensureCustomObjectSchema(prev, customData.objectId, customData.label));
+        closeSchemaEditor();
         setSidebarOpen(true);
         return;
-      }
-
-      if (node.type === "system") {
-        setLineageAnchor({ nodeId: node.id, fieldId: null });
-      } else if (node.type !== "touchpoint") {
-        setLineageAnchor(null);
       }
 
       setSelectedNodeId(node.id);
@@ -1346,7 +1477,7 @@ function InnerCanvas() {
       closeSchemaEditor();
       setSidebarOpen(true);
     },
-    [clearEdgeSelection, clearMetadataSelection, closeSchemaEditor],
+    [clearEdgeSelection, closeSchemaEditor],
   );
 
   const sidebarSelectionContext = sidebarSelection?.selectionContext ?? "node";
@@ -1402,26 +1533,26 @@ function InnerCanvas() {
             objectId?: string;
           };
           const isCustomObject = n.type === "customObject";
-          const source = isCustomObject
-            ? {
-                objectId: clean.objectId,
-                fieldAttributeKeys: clean.fieldAttributeKeys,
-                blockMetadata: sanitizedInput,
-              }
-            : {
-                nodeGroupId: clean.nodeGroupId,
-                fieldAttributeKeys: clean.fieldAttributeKeys,
-                blockMetadata: sanitizedInput,
-              };
-          const schemaBlockProps = isCustomObject
-            ? getCustomObjectBlockProperties(schema, clean.objectId)
-            : getGroupBlockProperties(schema, clean.nodeGroupId);
+          if (isCustomObject) {
+            const attributes = sanitizeFreeformMetadata(sanitizedInput);
+            selectedMetadata = attributes;
+            return {
+              ...n,
+              data: {
+                ...clean,
+                attributes,
+              },
+            };
+          }
 
-          const attributeDefinitions = getBlockAttributeDefinitions(
-            schema,
-            source,
-            isCustomObject ? "artifact" : "block",
-          );
+          const source = {
+            nodeGroupId: clean.nodeGroupId,
+            fieldAttributeKeys: clean.fieldAttributeKeys,
+            blockMetadata: sanitizedInput,
+          };
+          const schemaBlockProps = getGroupBlockProperties(schema, clean.nodeGroupId);
+
+          const attributeDefinitions = getBlockAttributeDefinitions(schema, source, "block");
 
           selectedMetadata = buildFieldMetadataUpdate(sanitizedInput, attributeDefinitions);
 
@@ -1568,6 +1699,8 @@ function InnerCanvas() {
       schema,
       edges,
       selectedEdgeId,
+      selectedNodeId,
+      selectedFieldId,
       lineageEdgeIds: lineage.edgeIds,
       hasLineage,
       onSelectEdge: openEdgeSettings,
@@ -1575,6 +1708,7 @@ function InnerCanvas() {
       onUpdateStickyNoteData: handleUpdateStickyNoteData,
       onDeleteNode: handleDeleteNode,
       onFieldSelect: handleFieldSelect,
+      onFieldEdit: handleFieldEdit,
       onDeleteField: handleDeleteField,
       onFieldConnectDrop: handleFieldConnectDrop,
       onFieldToNodeConnectDrop: handleFieldToNodeConnectDrop,
@@ -1587,6 +1721,8 @@ function InnerCanvas() {
       schema,
       edges,
       selectedEdgeId,
+      selectedNodeId,
+      selectedFieldId,
       lineage.edgeIds,
       hasLineage,
       openEdgeSettings,
@@ -1594,6 +1730,7 @@ function InnerCanvas() {
       handleUpdateStickyNoteData,
       handleDeleteNode,
       handleFieldSelect,
+      handleFieldEdit,
       handleDeleteField,
       handleFieldConnectDrop,
       handleFieldToNodeConnectDrop,
@@ -1603,6 +1740,85 @@ function InnerCanvas() {
       handleApplyFieldTablePaste,
     ],
   );
+
+  const handleClearLineage = useCallback(() => {
+    setLineageTrace(null);
+  }, []);
+
+  const buildLineageAnchorFromSelection = useCallback(() => {
+    if (!sidebarSelection) return null;
+    if (sidebarSelection.fieldId) {
+      return { nodeId: sidebarSelection.nodeId, fieldId: sidebarSelection.fieldId };
+    }
+    if (
+      sidebarSelection.nodeType === "system" ||
+      sidebarSelection.nodeType === "customObject"
+    ) {
+      return { nodeId: sidebarSelection.nodeId, fieldId: null };
+    }
+    return null;
+  }, [sidebarSelection]);
+
+  const lineageToolbarSelection = useMemo(() => {
+    if (sidebarSelection) {
+      if (sidebarSelection.fieldId) {
+        return {
+          label: `${sidebarSelection.nodeLabel ?? "Block"} · ${sidebarSelection.fieldLabel ?? "Field"}`,
+          kind: "field" as const,
+        };
+      }
+      if (sidebarSelection.nodeType === "customObject") {
+        return {
+          label: sidebarSelection.nodeLabel ?? "Object",
+          kind: "object" as const,
+        };
+      }
+      if (sidebarSelection.nodeType === "system") {
+        return {
+          label: sidebarSelection.nodeLabel ?? "Block",
+          kind: "block" as const,
+        };
+      }
+    }
+
+    if (!lineageTrace) return null;
+
+    const anchorNode = nodes.find((item) => item.id === lineageTrace.anchor.nodeId);
+    const nodeLabel = (anchorNode?.data as { label?: string } | undefined)?.label ?? "Block";
+    if (lineageTrace.anchor.fieldId) {
+      const fields = (anchorNode?.data as SystemNodeData | undefined)?.fields ?? [];
+      const field = fields.find((item) => item.id === lineageTrace.anchor.fieldId);
+      return {
+        label: `${nodeLabel} · ${field?.label ?? "Field"}`,
+        kind: "field" as const,
+      };
+    }
+    if (anchorNode?.type === "customObject") {
+      return { label: nodeLabel, kind: "object" as const };
+    }
+    return { label: nodeLabel, kind: "block" as const };
+  }, [sidebarSelection, lineageTrace, nodes]);
+
+  const handleTraceUpstream = useCallback(() => {
+    const anchor = buildLineageAnchorFromSelection();
+    if (!anchor) return;
+    clearEdgeSelection();
+    setLineageTrace({ anchor, direction: "upstream" });
+  }, [buildLineageAnchorFromSelection, clearEdgeSelection]);
+
+  const handleTraceDownstream = useCallback(() => {
+    const anchor = buildLineageAnchorFromSelection();
+    if (!anchor) return;
+    clearEdgeSelection();
+    setLineageTrace({ anchor, direction: "downstream" });
+  }, [buildLineageAnchorFromSelection, clearEdgeSelection]);
+
+  const handleTraceFull = useCallback(() => {
+    const anchor = buildLineageAnchorFromSelection();
+    if (!anchor) return;
+    clearEdgeSelection();
+    setLineageTrace({ anchor, direction: "full" });
+  }, [buildLineageAnchorFromSelection, clearEdgeSelection]);
 
   const onNodeContextMenu = useCallback(
     (e: React.MouseEvent, node: Node) => {
@@ -1617,7 +1833,6 @@ function InnerCanvas() {
 
   const onPaneClick = useCallback(() => {
     setActiveTouchpointId(null);
-    setLineageAnchor(null);
     clearMetadataSelection();
     clearEdgeSelection();
   }, [clearEdgeSelection, clearMetadataSelection]);
@@ -1626,12 +1841,105 @@ function InnerCanvas() {
     ? (nodes.find((n) => n.id === activeTouchpointId)?.data as { label?: string } | undefined)?.label
     : null;
 
-  const handleOpenSchemaEditor = useCallback((groupId: string) => {
-    clearMetadataSelection();
-    clearEdgeSelection();
-    setSchemaEditorCustomObjectId(null);
-    setSchemaEditorGroupId(groupId);
-  }, [clearMetadataSelection, clearEdgeSelection]);
+  const handleOpenSchemaEditor = useCallback(
+    (groupId: string) => {
+      clearMetadataSelection();
+      setSidebarOpen(false);
+      setSchemaEditorCustomObjectId(null);
+      setSchemaEditorGroupId(groupId);
+    },
+    [clearMetadataSelection],
+  );
+
+  const buildVersionSnapshot = useCallback((): ProjectVersionSnapshot => {
+    const flowObject = rfInstance?.toObject();
+    const drawingData = drawingSnapshotRef.current
+      ? [drawingSnapshotRef.current]
+      : drawings.length
+        ? drawings
+        : undefined;
+
+    return {
+      nodes: (flowObject?.nodes as Node[] | undefined) ?? nodes,
+      edges: (flowObject?.edges as Edge[] | undefined) ?? edges,
+      viewport: flowObject?.viewport ?? rfInstance?.getViewport(),
+      schema,
+      drawings: drawingData,
+    };
+  }, [nodes, edges, schema, drawings, rfInstance]);
+
+  const defaultVersionName = useMemo(
+    () => `Version ${new Date().toLocaleString()}`,
+    [saveVersionDialogOpen],
+  );
+
+  const handleSaveVersionConfirm = useCallback(
+    async (versionName: string) => {
+      if (!project || !activeSheet) {
+        toast.error("No active project sheet to save.");
+        return;
+      }
+
+      setIsSavingVersion(true);
+      try {
+        await saveProjectVersion(
+          project.id,
+          activeSheet.id,
+          versionName,
+          buildVersionSnapshot(),
+          { projectName: project.name, createdBy: getCollaboratorDisplayName() },
+        );
+        toast.success(`Saved version "${versionName}"`);
+        setSaveVersionDialogOpen(false);
+      } catch (error) {
+        toast.error(formatSupabaseError(error));
+      } finally {
+        setIsSavingVersion(false);
+      }
+    },
+    [project, activeSheet, buildVersionSnapshot],
+  );
+
+  const handlePreviewVersion = useCallback((version: ProjectVersion) => {
+    setVersionPreview(version);
+    setVersionHistoryOpen(false);
+    toast.message(`Previewing "${version.versionName}" (read-only)`);
+  }, []);
+
+  const handleRestoreVersion = useCallback(
+    (version: ProjectVersion) => {
+      if (
+        !window.confirm(
+          `Restore "${version.versionName}"? This replaces the current sheet contents.`,
+        )
+      ) {
+        return;
+      }
+
+      pushUndo();
+      setNodes(
+        version.snapshot.nodes.map((node) => ({
+          ...node,
+          data: stripDisplayData((node.data ?? {}) as Record<string, unknown>),
+        })),
+      );
+      setEdges(version.snapshot.edges);
+      if (version.snapshot.schema) {
+        setSchema(normalizeSchema(version.snapshot.schema));
+      }
+      if (version.snapshot.viewport && rfInstance) {
+        rfInstance.setViewport(version.snapshot.viewport, { duration: 0 });
+      }
+      setVersionPreview(null);
+      setVersionHistoryOpen(false);
+      toast.success(`Restored "${version.versionName}"`);
+    },
+    [pushUndo, setNodes, setEdges, rfInstance],
+  );
+
+  const handleExitVersionPreview = useCallback(() => {
+    setVersionPreview(null);
+  }, []);
 
   const buildExportPayload = useCallback(() => {
     const drawingData = drawingSnapshotRef.current
@@ -1919,7 +2227,7 @@ function InnerCanvas() {
     setNodes([]);
     setEdges([]);
     setActiveTouchpointId(null);
-    setLineageAnchor(null);
+    setLineageTrace(null);
     setSelectedNodeId(null);
     setSelectedFieldId(null);
     setSidebarOpen(false);
@@ -2021,7 +2329,7 @@ function InnerCanvas() {
     if (drawingMode || activeView !== "canvas") return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isEditableKeyboardTarget(event.target)) return;
+      if (isEditableKeyboardTarget(event.target) || isFieldTablePasteTarget(event.target)) return;
       if (!event.metaKey && !event.ctrlKey) return;
 
       const key = event.key.toLowerCase();
@@ -2042,37 +2350,83 @@ function InnerCanvas() {
         const selected = getSelectedCopyableNodes(nodes);
         if (selected.length === 0) return;
         event.preventDefault();
-        clipboardNodesRef.current = cloneNodesForClipboard(nodes);
+        const cloned = cloneNodesForClipboard(nodes);
         pasteGenerationRef.current = 0;
+        void navigator.clipboard.writeText(serializeNodesToClipboard(cloned)).catch(() => {
+          toast.error("Could not copy to clipboard");
+        });
         toast.success(`Copied ${selected.length} item${selected.length === 1 ? "" : "s"}`);
         return;
       }
 
       if (key === "v") {
-        if (clipboardNodesRef.current.length === 0) return;
         event.preventDefault();
-        pushUndo();
-        pasteGenerationRef.current += 1;
-        const duplicates = duplicateNodesFromClipboard(
-          clipboardNodesRef.current,
-          nextNodeId,
-          pasteGenerationRef.current,
-        );
-        setNodes((current) =>
-          sortNodesParentFirst([
-            ...current.map((node) => ({ ...node, selected: false })),
-            ...duplicates,
-          ]),
-        );
-        clearEdgeSelection();
-        setSidebarOpen(false);
-        toast.success(`Pasted ${duplicates.length} item${duplicates.length === 1 ? "" : "s"}`);
+        void (async () => {
+          let clipboardText = "";
+          try {
+            clipboardText = await navigator.clipboard.readText();
+          } catch {
+            toast.error("Could not read clipboard");
+            return;
+          }
+
+          const clipboardNodes = parseClipboardNodes(clipboardText);
+          if (clipboardNodes && clipboardNodes.length > 0) {
+            pushUndo();
+            pasteGenerationRef.current += 1;
+            const duplicates = duplicateNodesFromClipboard(
+              clipboardNodes,
+              nextNodeId,
+              pasteGenerationRef.current,
+            );
+            setNodes((current) =>
+              sortNodesParentFirst([
+                ...current.map((node) => ({ ...node, selected: false })),
+                ...duplicates,
+              ]),
+            );
+            clearEdgeSelection();
+            setSidebarOpen(false);
+            toast.success(`Pasted ${duplicates.length} item${duplicates.length === 1 ? "" : "s"}`);
+            return;
+          }
+
+          const plainText = clipboardText.trim();
+          if (!plainText) return;
+
+          pushUndo();
+          pasteGenerationRef.current += 1;
+          const pastePosition = (() => {
+            if (rfInstance && wrapperRef.current) {
+              const rect = wrapperRef.current.getBoundingClientRect();
+              const center = rfInstance.screenToFlowPosition({
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+              });
+              const offset = 30 * pasteGenerationRef.current;
+              return { x: center.x + offset, y: center.y + offset };
+            }
+            const offset = 30 * pasteGenerationRef.current;
+            return { x: 120 + offset, y: 120 + offset };
+          })();
+
+          const textNode = createTextNodeWithContent(plainText, pastePosition, nextNodeId);
+          setNodes((current) =>
+            sortNodesParentFirst([
+              ...current.map((node) => ({ ...node, selected: false })),
+              { ...textNode, selected: true },
+            ]),
+          );
+          clearEdgeSelection();
+          setSidebarOpen(false);
+          toast.success("Pasted text as textbox");
+        })();
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [nodes, drawingMode, activeView, setNodes, clearEdgeSelection, handleUndo, handleRedo, pushUndo]);
+  }, [nodes, drawingMode, activeView, setNodes, clearEdgeSelection, handleUndo, handleRedo, pushUndo, rfInstance]);
 
   useEffect(() => {
     if (!drawingMode) return;
@@ -2128,6 +2482,34 @@ function InnerCanvas() {
         <div className="flex items-center gap-2 shrink-0">
           {activeView === "canvas" && (
             <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSaveVersionDialogOpen(true)}
+                disabled={isSavingVersion || isVersionPreview}
+                title="Save a named version to cloud history"
+              >
+                <span aria-hidden>💾</span>
+                <span className="ml-1.5">Save Version</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setVersionHistoryOpen(true)}
+                title="Version history"
+              >
+                <span aria-hidden>🕒</span>
+                <span className="ml-1.5">History</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShareDialogOpen(true)}
+                title="Invite collaborators"
+              >
+                <Share2 className="mr-1.5 h-4 w-4" />
+                Share
+              </Button>
               <Button variant="outline" size="sm" onClick={handleUndo} title="Undo (Ctrl+Z)">
                 <Undo2 className="h-4 w-4" />
               </Button>
@@ -2195,6 +2577,21 @@ function InnerCanvas() {
         ) : activeView === "guide" ? (
           <GuideView />
         ) : (
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {lineageToolbarSelection && (
+            <LineageToolbar
+              selectionLabel={lineageToolbarSelection.label}
+              selectionKind={lineageToolbarSelection.kind}
+              traceActive={Boolean(lineageTrace)}
+              traceDirection={lineageTrace?.direction ?? null}
+              blockCount={lineage.nodeIds.size}
+              edgeCount={lineage.edgeIds.size}
+              onTraceUpstream={handleTraceUpstream}
+              onTraceDownstream={handleTraceDownstream}
+              onTraceFull={handleTraceFull}
+              onClearLineage={handleClearLineage}
+            />
+          )}
         <div
           ref={wrapperRef}
           className={`flex-1 relative flow-export-host ${edgeSettingsOpen ? "canvas-edge-focus" : ""}`}
@@ -2209,15 +2606,35 @@ function InnerCanvas() {
           )}
           <NodeCanvasProvider value={nodeCanvasValue}>
             <LineageProvider value={lineageContextValue}>
+              {isVersionPreview && versionPreview && (
+                <Panel position="top-center">
+                  <div className="version-preview-banner version-preview-banner--floating">
+                    <span>
+                      Read-only preview: <strong>{versionPreview.versionName}</strong>
+                    </span>
+                    <Button type="button" size="sm" variant="outline" onClick={handleExitVersionPreview}>
+                      Exit preview
+                    </Button>
+                    <Button type="button" size="sm" onClick={() => handleRestoreVersion(versionPreview)}>
+                      Restore
+                    </Button>
+                  </div>
+                </Panel>
+              )}
               <ReactFlow
-                nodes={nodes}
+                nodes={canvasNodes}
                 edges={displayedEdges}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
+                onEdgesChange={onEdgesChangeWrapped}
                 onConnect={onConnect}
                 onConnectEnd={onConnectEnd}
+                onEdgeUpdate={onEdgeUpdate}
+                onEdgeUpdateStart={onEdgeUpdateStart}
+                onEdgeUpdateEnd={onEdgeUpdateEnd}
+                edgeUpdaterRadius={20}
+                edgesUpdatable={!canvasReadOnly}
                 isValidConnection={isValidConnection}
                 onNodesDelete={onNodesDelete}
                 onEdgesDelete={onEdgesDelete}
@@ -2225,6 +2642,7 @@ function InnerCanvas() {
                 onDrop={onDrop}
                 onDragOver={onDragOver}
                 onNodeClick={onNodeClick}
+                onNodeDoubleClick={onNodeDoubleClick}
                 onNodeContextMenu={onNodeContextMenu}
                 onNodeDragStop={onNodeDragStop}
                 onEdgeClick={onEdgeClick}
@@ -2234,6 +2652,7 @@ function InnerCanvas() {
                 connectionRadius={36}
                 defaultEdgeOptions={{
                   type: "custom",
+                  data: { pathType: "step" },
                   markerEnd: {
                     type: MarkerType.ArrowClosed,
                     width: 24,
@@ -2247,12 +2666,14 @@ function InnerCanvas() {
                 selectionMode={SelectionMode.Partial}
                 panOnDrag={drawingMode ? [1, 2] : [1, 2]}
                 panOnScroll
-                nodesDraggable={!drawingMode}
-                nodesConnectable={!drawingMode}
+                nodesDraggable={!canvasReadOnly}
+                nodesConnectable={!canvasReadOnly}
                 elementsSelectable={!drawingMode}
-                edgesFocusable={!drawingMode}
-                nodesFocusable={!drawingMode}
+                edgesFocusable={!canvasReadOnly}
+                nodesFocusable={!canvasReadOnly}
                 multiSelectionKeyCode={["Meta", "Control"]}
+                minZoom={0.05}
+                maxZoom={4}
                 fitView
                 proOptions={{ hideAttribution: true }}
                 style={{ background: "var(--canvas-bg, #f8fafc)" }}
@@ -2260,38 +2681,17 @@ function InnerCanvas() {
             <Background gap={18} size={1.5} color="var(--canvas-dot, #cbd5e1)" />
             <Controls />
             <MiniMap pannable zoomable />
-            {nodes.length === 0 && (
+            {canvasNodes.length === 0 && (
               <Panel position="top-center">
                 <div className="rounded-md border border-dashed border-border bg-card/80 px-4 py-2 text-sm text-muted-foreground backdrop-blur">
                   Drag blocks or touchpoints from the sidebar onto the canvas
                 </div>
               </Panel>
             )}
-            {hasLineage && lineageAnchor && (
-              <Panel position="top-center">
-                <div className="lineage-banner animate-fade-in">
-                  <span className="lineage-banner__dot" />
-                  <span>
-                    Lineage for{" "}
-                    <strong>
-                      {selectedNodeLabel}
-                      {selectedFieldLabel ? `.${selectedFieldLabel}` : ""}
-                    </strong>{" "}
-                    · {lineage.nodeIds.size} block(s), {lineage.edgeIds.size} edge(s)
-                  </span>
-                  <button
-                    onClick={() => setLineageAnchor(null)}
-                    className="lineage-banner__close"
-                    aria-label="Clear lineage"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </Panel>
-            )}
               </ReactFlow>
             </LineageProvider>
           </NodeCanvasProvider>
+        </div>
         </div>
         )}
       </div>
@@ -2338,6 +2738,33 @@ function InnerCanvas() {
         onConfirm={handleCustomObjectConfirm}
       />
 
+      <SaveVersionDialog
+        open={saveVersionDialogOpen}
+        defaultName={defaultVersionName}
+        isSaving={isSavingVersion}
+        onOpenChange={setSaveVersionDialogOpen}
+        onConfirm={(versionName) => void handleSaveVersionConfirm(versionName)}
+      />
+
+      <ShareProjectDialog
+        open={shareDialogOpen}
+        onOpenChange={setShareDialogOpen}
+        projectId={project?.id ?? null}
+        projectName={project?.name ?? "Untitled Project"}
+        getPayload={buildExportPayload}
+      />
+
+      <VersionHistoryDrawer
+        open={versionHistoryOpen}
+        onOpenChange={setVersionHistoryOpen}
+        projectId={project?.id ?? null}
+        sheetId={activeSheet?.id ?? null}
+        previewVersionId={versionPreview?.id ?? null}
+        onPreviewVersion={handlePreviewVersion}
+        onRestoreVersion={handleRestoreVersion}
+        onExitPreview={handleExitVersionPreview}
+      />
+
       <EmbedSnippetDialog
         open={embedSnippetOpen}
         onOpenChange={setEmbedSnippetOpen}
@@ -2367,43 +2794,45 @@ function InnerCanvas() {
         onConfirm={handleEncryptionConfirm}
       />
 
-      <SchemaEditorSidebar
-        isOpen={schemaEditorOpen}
-        groupId={schemaEditorGroupId}
-        customObjectId={schemaEditorCustomObjectId}
-        schema={schema}
-        onUpdateSchema={setSchema}
-        onClose={closeSchemaEditor}
-      />
-
-      <MetadataSidebar
-        isOpen={sidebarOpen && Boolean(sidebarSelection)}
-        stackOffset={schemaEditorOpen}
-        onClose={() => setSidebarOpen(false)}
-        nodeId={sidebarSelection?.nodeId ?? null}
-        nodeLabel={sidebarSelection?.nodeLabel ?? null}
-        fieldId={sidebarSelection?.fieldId ?? null}
-        fieldLabel={sidebarSelection?.fieldLabel ?? null}
-        metadata={sidebarSelection?.metadata ?? {}}
-        blockProperties={sidebarSelection?.blockProperties ?? []}
-        fieldProperties={sidebarSelection?.fieldProperties ?? []}
-        selectionContext={sidebarSelectionContext}
-        lockBlockPropertyKeys={sidebarSelection?.lockBlockPropertyKeys ?? false}
-        lockFieldPropertyKeys={sidebarSelection?.lockFieldPropertyKeys ?? false}
-        allowAddBlockAttributes={sidebarSelection?.allowAddBlockAttributes ?? false}
-        allowAddFieldAttributes={sidebarSelection?.allowAddFieldAttributes ?? false}
-        onUpdateBlockMetadata={handleUpdateBlockMetadata}
-        onUpdateFieldAttributeKeys={handleUpdateBlockFieldAttributeKeys}
-        onUpdateFieldMetadata={handleUpdateFieldMetadata}
-        onRenameNode={handleRenameNode}
-        onRenameField={handleRenameField}
-        onDeleteField={handleDeleteField}
-        onDeleteNode={
-          sidebarSelection && !sidebarSelection.fieldId
-            ? () => handleDeleteNode(sidebarSelection.nodeId)
-            : undefined
-        }
-      />
+      {schemaEditorOpen ? (
+        <SchemaEditorSidebar
+          isOpen
+          groupId={schemaEditorGroupId}
+          customObjectId={null}
+          schema={schema}
+          onUpdateSchema={setSchema}
+          onClose={closeSchemaEditor}
+        />
+      ) : (
+        <MetadataSidebar
+          isOpen={sidebarOpen && Boolean(sidebarSelection)}
+          nodeType={sidebarSelection?.nodeType}
+          onClose={() => setSidebarOpen(false)}
+          nodeId={sidebarSelection?.nodeId ?? null}
+          nodeLabel={sidebarSelection?.nodeLabel ?? null}
+          fieldId={sidebarSelection?.fieldId ?? null}
+          fieldLabel={sidebarSelection?.fieldLabel ?? null}
+          metadata={sidebarSelection?.metadata ?? {}}
+          blockProperties={sidebarSelection?.blockProperties ?? []}
+          fieldProperties={sidebarSelection?.fieldProperties ?? []}
+          selectionContext={sidebarSelectionContext}
+          lockBlockPropertyKeys={sidebarSelection?.lockBlockPropertyKeys ?? false}
+          lockFieldPropertyKeys={sidebarSelection?.lockFieldPropertyKeys ?? false}
+          allowAddBlockAttributes={sidebarSelection?.allowAddBlockAttributes ?? false}
+          allowAddFieldAttributes={sidebarSelection?.allowAddFieldAttributes ?? false}
+          onUpdateBlockMetadata={handleUpdateBlockMetadata}
+          onUpdateFieldAttributeKeys={handleUpdateBlockFieldAttributeKeys}
+          onUpdateFieldMetadata={handleUpdateFieldMetadata}
+          onRenameNode={handleRenameNode}
+          onRenameField={handleRenameField}
+          onDeleteField={handleDeleteField}
+          onDeleteNode={
+            sidebarSelection && !sidebarSelection.fieldId
+              ? () => handleDeleteNode(sidebarSelection.nodeId)
+              : undefined
+          }
+        />
+      )}
     </div>
   );
 }

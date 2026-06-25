@@ -23,7 +23,7 @@ import {
 } from "@/lib/fieldMetadata";
 import { BlockInternalFieldLinks } from "@/components/nodes/BlockInternalFieldLinks";
 import { EditableFieldTable } from "@/components/nodes/EditableFieldTable";
-import { buildTablePastePlan, parseTabularClipboard, type TablePasteMode } from "@/lib/tableClipboard";
+import { buildTablePastePlan, parseTabularClipboard, resolveAnchorFieldIndex, resolveTablePasteMode } from "@/lib/tableClipboard";
 import {
   countFieldsInGroup,
   countFieldsInSection,
@@ -119,10 +119,10 @@ export type SystemNodeData = {
 
 function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeData>) {
   const data: SystemNodeData = rawData ?? { label: "System" };
-  const { schema, onUpdateNodeData, onDeleteNode, onFieldSelect, onDeleteField, onFieldConnectDrop, onRenameField, onUpdateFieldTableCell, onApplyFieldTablePaste } =
+  const { schema, onUpdateNodeData, onDeleteNode, onFieldSelect, onFieldEdit, onDeleteField, onFieldConnectDrop, onRenameField, onUpdateFieldTableCell, onApplyFieldTablePaste, selectedNodeId, selectedFieldId } =
     useNodeCanvas();
   const updateNodeInternals = useUpdateNodeInternals();
-  const { hasLineage, lineageNodeIds, activeFieldIdsByNode, impactNodeIds, anchorNodeId, highlightedNodeIds } =
+  const { hasLineage, lineageNodeIds, highlightedFieldsByNode, impactNodeIds, anchorNodeId } =
     useLineage();
 
   const fields = data.fields ?? [];
@@ -131,13 +131,13 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const renderableSections = useMemo(() => getRenderableSections(data, fields), [data, fields]);
   const collapsed = !!data.collapsed;
   const tableExpanded = !!data.tableExpanded;
-  const faded = hasLineage && !lineageNodeIds.has(id);
   const inLineage = lineageNodeIds.has(id);
-  const isHighlighted = highlightedNodeIds.has(id);
+  const highlightedFieldIds = highlightedFieldsByNode.get(id) ?? new Set<string>();
+  const fieldLineageActive = hasLineage && inLineage && fields.length > 0;
+  const faded = hasLineage && !inLineage;
   const isAnchor = anchorNodeId === id;
   const hasImpact = impactNodeIds.has(id);
-  const fieldLineageActive = hasLineage;
-  const activeFieldIds = activeFieldIdsByNode.get(id) ?? new Set<string>();
+  const activeFieldIds = highlightedFieldIds;
   const blockAttributeDefinitions = useMemo(
     () =>
       getBlockAttributeDefinitions(
@@ -256,15 +256,15 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
       const targetSection = pasteTarget?.sectionId ?? addFieldSectionId ?? sections[0]?.id ?? DEFAULT_SECTION_ID;
       const targetGroup = pasteTarget?.groupId ?? addFieldGroupId;
       const sectionFields = getFieldsForGroup(fields, targetSection, targetGroup ?? null);
-      const mode: TablePasteMode = event.shiftKey ? "merge" : "append";
-      const anchorFieldIndex =
-        mode === "merge" ? (pasteTarget?.fieldIndex ?? 0) : sectionFields.length;
+      const anchorFieldIndex = pasteTarget?.fieldIndex ?? 0;
+      const mode = resolveTablePasteMode(event.shiftKey, sectionFields.length);
+      const resolvedAnchor = resolveAnchorFieldIndex(mode, anchorFieldIndex, sectionFields.length);
 
       const plan = buildTablePastePlan(
         grid,
         sectionFields,
         tableColumns,
-        { fieldIndex: anchorFieldIndex, columnKey: "label" },
+        { fieldIndex: resolvedAnchor, columnKey: "label" },
         mode,
       );
       if (plan.updates.length === 0 && plan.newFields.length === 0) return;
@@ -493,7 +493,10 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
           fullTableGridStyle={fullTableGridStyle}
           activeFieldIds={activeFieldIds}
           fieldLineageActive={fieldLineageActive}
+          selectedNodeId={selectedNodeId}
+          selectedFieldId={selectedFieldId}
           onFieldSelect={onFieldSelect}
+          onFieldEdit={onFieldEdit}
           onDeleteField={onDeleteField}
           onFieldReorder={reorderFields}
           onFieldConnectDrop={onFieldConnectDrop}
@@ -515,10 +518,12 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
             fullTableGridStyle={fullTableGridStyle}
             tableColumns={tableColumns}
             fieldProperties={fieldAttributeDefinitions}
-            isActive={activeFieldIds.has(field.id)}
+            isActive={fieldLineageActive && activeFieldIds.has(field.id)}
             isFaded={fieldLineageActive && !activeFieldIds.has(field.id)}
+            isSelected={selectedNodeId === id && selectedFieldId === field.id}
             isPasteTarget={isActivePasteTarget(sectionId, groupId, fieldIndex)}
             onFieldSelect={onFieldSelect}
+            onFieldEdit={onFieldEdit}
             onDeleteField={onDeleteField}
             onFieldReorder={reorderFields}
             onFieldConnectDrop={onFieldConnectDrop}
@@ -534,9 +539,11 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
     <div
       className={`system-node ${selected ? "system-node--selected" : ""} ${
         collapsed ? "system-node--collapsed" : ""
-      } ${tableExpanded ? "system-node--table-expanded" : ""} ${faded ? "system-node--faded" : ""} ${inLineage ? "system-node--lineage" : ""} ${
-        isHighlighted ? "system-node--highlighted" : ""
-      } ${isAnchor ? "system-node--anchor" : ""} ${hasImpact ? "system-node--impact" : ""}`}
+      } ${tableExpanded ? "system-node--table-expanded" : ""} ${faded ? "system-node--faded" : ""} ${
+        inLineage ? "system-node--lineage" : ""
+      } ${inLineage ? "system-node--highlighted" : ""} ${
+        isAnchor ? "system-node--anchor" : ""
+      } ${hasImpact ? "system-node--impact" : ""}`}
     >
       {showSettings && (
         <div className="system-node__settings-panel nodrag nopan nowheel" onPointerDown={stopPointer}>
@@ -1010,8 +1017,10 @@ type FieldRowProps = {
   fieldProperties: ReturnType<typeof getFieldAttributeDefinitions>;
   isActive: boolean;
   isFaded: boolean;
+  isSelected?: boolean;
   isPasteTarget?: boolean;
   onFieldSelect: (nodeId: string, fieldId: string) => void;
+  onFieldEdit: (nodeId: string, fieldId: string) => void;
   onDeleteField: (nodeId: string, fieldId: string) => void;
   onFieldReorder: (sourceFieldId: string, targetFieldId: string) => void;
   onFieldConnectDrop: (
@@ -1056,8 +1065,10 @@ export function FieldRow({
   fieldProperties,
   isActive,
   isFaded,
+  isSelected = false,
   isPasteTarget = false,
   onFieldSelect,
+  onFieldEdit,
   onDeleteField,
   onFieldReorder,
   onFieldConnectDrop,
@@ -1175,10 +1186,17 @@ export function FieldRow({
     }
   };
 
-  const rowStateClass = `${isActive ? "is-active" : ""} ${isFaded ? "is-faded" : ""} ${
-    isDragging ? "is-dragging" : ""
-  } ${isDropTarget ? "is-drop-target" : ""} ${isConnectTarget ? "is-connect-target" : ""}`;
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onFieldEdit(nodeId, field.id);
+  };
 
+  const rowStateClass = `${isActive ? "is-active" : ""} ${isFaded ? "is-faded" : ""} ${
+    isSelected ? "is-selected" : ""
+  } ${isDragging ? "is-dragging" : ""} ${isDropTarget ? "is-drop-target" : ""} ${
+    isConnectTarget ? "is-connect-target" : ""
+  }`;
   if (variant === "compact") {
     return (
       <SmartHoverAttributes
@@ -1209,7 +1227,8 @@ export function FieldRow({
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onClick={handleClick}
-            title="Click, then Ctrl+V to paste from Excel"
+            onDoubleClick={handleDoubleClick}
+            title="Click to select · Double-click to edit in sidebar"
           >
             <span className="system-node__field-name">{field.label}</span>
           </div>
@@ -1241,6 +1260,7 @@ export function FieldRow({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
       >
         <div className="system-node__field-handle-col system-node__field-handle-col--left nodrag nopan pointer-events-auto">
           <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="left" type="target" />
@@ -1258,7 +1278,7 @@ export function FieldRow({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              onFieldSelect(nodeId, field.id);
+              onFieldEdit(nodeId, field.id);
             }}
             className="system-node__icon-btn system-node__icon-btn--static"
             title="Edit in sidebar"

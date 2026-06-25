@@ -5,6 +5,7 @@ import {
   getBezierPath,
   getStraightPath,
   Position,
+  useNodes,
   useReactFlow,
   type EdgeProps,
 } from "reactflow";
@@ -17,6 +18,8 @@ import {
   resolveWaypoints,
   type FlowPoint,
 } from "@/lib/edgePath";
+import { buildNodeLookup } from "@/lib/containerUtils";
+import { resolveSmartEdgeTerminals } from "@/lib/smartEdgeRouting";
 import type { EdgeData, EdgePathType } from "@/lib/storage";
 
 export type CustomEdgeData = EdgeData;
@@ -63,6 +66,8 @@ function getAutomaticEdgePath(
 
 function CustomEdgeImpl({
   id,
+  source,
+  target: targetId,
   sourceX,
   sourceY,
   targetX,
@@ -77,12 +82,29 @@ function CustomEdgeImpl({
   markerEnd,
 }: EdgeProps<CustomEdgeData>) {
   const { setEdges, screenToFlowPosition } = useReactFlow();
+  const nodes = useNodes();
+  const nodeLookup = useMemo(() => buildNodeLookup(nodes), [nodes]);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
 
   const pathType = data?.pathType ?? "step";
   const lineStyle = data?.lineStyle ?? "solid";
-  const source: FlowPoint = { x: sourceX, y: sourceY };
-  const target: FlowPoint = { x: targetX, y: targetY };
+
+  const smartTerminals = useMemo(
+    () =>
+      resolveSmartEdgeTerminals(
+        nodeLookup.get(source),
+        nodeLookup.get(targetId),
+        { x: sourceX, y: sourceY },
+        { x: targetX, y: targetY },
+        nodes,
+      ),
+    [nodeLookup, source, targetId, sourceX, sourceY, targetX, targetY, nodes],
+  );
+
+  const routingSource: FlowPoint = smartTerminals.source;
+  const routingTarget: FlowPoint = smartTerminals.target;
+  const routingSourcePosition = smartTerminals.sourcePosition;
+  const routingTargetPosition = smartTerminals.targetPosition;
 
   const waypoints = useMemo(
     () => resolveWaypoints(data?.controlPoints),
@@ -94,43 +116,39 @@ function CustomEdgeImpl({
   const [edgePath, labelX, labelY] = useMemo(() => {
     if (hasCustomBends) {
       const path = buildWaypointPath(
-        source,
-        target,
+        routingSource,
+        routingTarget,
         waypoints,
-        sourcePosition ?? Position.Bottom,
-        targetPosition ?? Position.Top,
+        routingSourcePosition,
+        routingTargetPosition,
       );
       const midpoint = getPathMidpoint(
-        source,
-        target,
+        routingSource,
+        routingTarget,
         waypoints,
-        sourcePosition ?? Position.Bottom,
-        targetPosition ?? Position.Top,
+        routingSourcePosition,
+        routingTargetPosition,
       );
       return [path, midpoint.x, midpoint.y] as const;
     }
 
     const [path, lx, ly] = getAutomaticEdgePath(pathType, {
-      sourceX,
-      sourceY,
-      targetX,
-      targetY,
-      sourcePosition,
-      targetPosition,
+      sourceX: routingSource.x,
+      sourceY: routingSource.y,
+      targetX: routingTarget.x,
+      targetY: routingTarget.y,
+      sourcePosition: routingSourcePosition,
+      targetPosition: routingTargetPosition,
     });
     return [path, lx, ly] as const;
   }, [
     hasCustomBends,
     waypoints,
-    source,
-    target,
+    routingSource,
+    routingTarget,
+    routingSourcePosition,
+    routingTargetPosition,
     pathType,
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition,
-    targetPosition,
   ]);
 
   const isLineage = animated && (className?.includes("edge-lineage") ?? false);
@@ -189,10 +207,10 @@ function CustomEdgeImpl({
 
   const addMidWaypoint = useCallback(() => {
     const insertPoint = hasCustomBends
-      ? getPathMidpoint(source, target, waypoints)
+      ? getPathMidpoint(routingSource, routingTarget, waypoints)
       : { x: labelX, y: labelY };
     addWaypointAt(insertPoint);
-  }, [hasCustomBends, waypoints, source, target, labelX, labelY, addWaypointAt]);
+  }, [hasCustomBends, waypoints, routingSource, routingTarget, labelX, labelY, addWaypointAt]);
 
   const onWaypointPointerDown = (index: number, event: React.PointerEvent<HTMLButtonElement>) => {
     event.stopPropagation();

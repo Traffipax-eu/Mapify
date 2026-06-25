@@ -5,11 +5,12 @@ type PlusHandleProps = Omit<HandleProps, "className"> & {
   className?: string;
 };
 
-export function PlusHandle({ className = "", variant = "parent", ...props }: PlusHandleProps) {
+export function PlusHandle({ className = "", variant = "parent", isConnectable = true, ...props }: PlusHandleProps) {
   return (
     <Handle
       {...props}
-      className={`flow-handle flow-handle--${variant} ${className}`.trim()}
+      isConnectable={isConnectable}
+      className={`flow-handle flow-handle--${variant} pointer-events-auto ${className}`.trim()}
     />
   );
 }

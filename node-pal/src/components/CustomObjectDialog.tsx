@@ -68,18 +68,20 @@ export function CustomObjectDialog({ open, onOpenChange, onConfirm, initial }: P
 
           <div className="space-y-2">
             <span className="text-xs font-medium text-muted-foreground">Icon</span>
-            <div className="grid grid-cols-6 gap-2">
-              {NODE_ICON_OPTIONS.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  className={`custom-object-dialog__icon-pick ${iconId === option.id ? "is-active" : ""}`}
-                  onClick={() => setIconId(option.id)}
-                  title={option.label}
-                >
-                  <option.Icon className="h-4 w-4" />
-                </button>
-              ))}
+            <div className="custom-object-dialog__icon-grid max-h-44 overflow-y-auto rounded-lg border border-border p-2">
+              <div className="grid grid-cols-6 gap-2">
+                {NODE_ICON_OPTIONS.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`custom-object-dialog__icon-pick ${iconId === option.id ? "is-active" : ""}`}
+                    onClick={() => setIconId(option.id)}
+                    title={option.label}
+                  >
+                    <option.Icon className="h-4 w-4" />
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

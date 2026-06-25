@@ -120,6 +120,25 @@ function resolveForNode(
     };
   }
 
+  if (isArtifact) {
+    const customData = nodeData as CustomObjectNodeData;
+    return {
+      nodeId,
+      nodeLabel,
+      nodeType,
+      fieldId: null,
+      fieldLabel: null,
+      metadata: safeMetadata(customData.attributes ?? customData.metadata),
+      blockProperties: [],
+      fieldProperties: fields.length > 0 ? fieldProperties : [],
+      selectionContext: "node",
+      lockBlockPropertyKeys: false,
+      lockFieldPropertyKeys: fields.length > 0 && fieldProperties.length > 0,
+      allowAddBlockAttributes: true,
+      allowAddFieldAttributes: schemaFieldProps.length === 0,
+    };
+  }
+
   return {
     nodeId,
     nodeLabel,

@@ -31,6 +31,8 @@ import {
 import {
   buildTablePastePlan,
   parseTabularClipboard,
+  resolveAnchorFieldIndex,
+  resolveTablePasteMode,
   type TableCellAddress,
   type TableColumnKey,
   type TablePasteMode,
@@ -48,7 +50,10 @@ type Props = {
   fullTableGridStyle: React.CSSProperties;
   activeFieldIds: Set<string>;
   fieldLineageActive: boolean;
+  selectedNodeId: string | null;
+  selectedFieldId: string | null;
   onFieldSelect: (nodeId: string, fieldId: string) => void;
+  onFieldEdit: (nodeId: string, fieldId: string) => void;
   onDeleteField: (nodeId: string, fieldId: string) => void;
   onFieldReorder: (sourceFieldId: string, targetFieldId: string) => void;
   onFieldConnectDrop: (
@@ -97,24 +102,30 @@ function FieldConnectionHandle({
 function EditableTableRow({
   nodeId,
   field,
+  fieldIndex,
   fullTableGridStyle,
   rowStateClass,
   children,
   onFieldSelect,
+  onFieldEdit,
   onFieldReorder,
   onFieldConnectDrop,
+  onAnchorPasteRow,
 }: {
   nodeId: string;
   field: Field;
+  fieldIndex: number;
   fullTableGridStyle: React.CSSProperties;
   rowStateClass: string;
   children: ReactNode;
   onFieldSelect: (nodeId: string, fieldId: string) => void;
+  onFieldEdit: (nodeId: string, fieldId: string) => void;
   onFieldReorder: (sourceFieldId: string, targetFieldId: string) => void;
   onFieldConnectDrop: (
     source: { nodeId: string; fieldId: string },
     target: { nodeId: string; fieldId: string },
   ) => void;
+  onAnchorPasteRow: (fieldIndex: number, columnKey: TableColumnKey) => void;
 }) {
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isConnectTarget, setIsConnectTarget] = useState(false);
@@ -127,7 +138,14 @@ function EditableTableRow({
     if ((e.target as HTMLElement).closest(".system-node__table-cell-button, .system-node__table-cell-input")) {
       return;
     }
+    onAnchorPasteRow(fieldIndex, "label");
     onFieldSelect(nodeId, field.id);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onFieldEdit(nodeId, field.id);
   };
 
   const handleDragStart = (e: React.DragEvent) => {
@@ -249,6 +267,7 @@ function EditableTableRow({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
       >
         <div className="system-node__field-handle-col system-node__field-handle-col--left nodrag nopan pointer-events-auto">
           <FieldConnectionHandle nodeId={nodeId} fieldId={field.id} side="left" type="target" />
@@ -272,7 +291,10 @@ export function EditableFieldTable({
   fullTableGridStyle,
   activeFieldIds,
   fieldLineageActive,
+  selectedNodeId,
+  selectedFieldId,
   onFieldSelect,
+  onFieldEdit,
   onDeleteField,
   onFieldReorder,
   onFieldConnectDrop,
@@ -283,6 +305,19 @@ export function EditableFieldTable({
   const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
   const [draft, setDraft] = useState("");
   const [anchorCell, setAnchorCell] = useState<EditingCell>({ fieldIndex: 0, columnKey: "label" });
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  const focusTable = useCallback(() => {
+    tableRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  const anchorPasteRow = useCallback(
+    (fieldIndex: number, columnKey: TableColumnKey) => {
+      setAnchorCell({ fieldIndex, columnKey });
+      focusTable();
+    },
+    [focusTable],
+  );
 
   const startEditing = useCallback((fieldIndex: number, columnKey: TableColumnKey, initialValue: string) => {
     setAnchorCell({ fieldIndex, columnKey });
@@ -316,7 +351,14 @@ export function EditableFieldTable({
   const applyClipboardGrid = useCallback(
     (grid: string[][], mode: TablePasteMode) => {
       if (grid.length === 0) return;
-      const plan = buildTablePastePlan(grid, fields, columns, anchorCell, mode);
+      const resolvedAnchor = resolveAnchorFieldIndex(mode, anchorCell.fieldIndex, fields.length);
+      const plan = buildTablePastePlan(
+        grid,
+        fields,
+        columns,
+        { fieldIndex: resolvedAnchor, columnKey: anchorCell.columnKey },
+        mode,
+      );
       if (plan.updates.length === 0 && plan.newFields.length === 0) return;
       onApplyTablePaste(nodeId, sectionId, groupId, plan);
       setEditingCell(null);
@@ -333,7 +375,7 @@ export function EditableFieldTable({
       event.preventDefault();
       event.stopPropagation();
 
-      const mode = event.shiftKey ? "merge" : "append";
+      const mode = resolveTablePasteMode(event.shiftKey, fields.length);
       applyClipboardGrid(grid, mode);
     },
     [applyClipboardGrid],
@@ -378,10 +420,13 @@ export function EditableFieldTable({
         onMouseDown={stopBubble}
         onClick={(e) => {
           stopBubble(e);
-          setAnchorCell({ fieldIndex, columnKey });
+          anchorPasteRow(fieldIndex, columnKey);
+        }}
+        onDoubleClick={(e) => {
+          stopBubble(e);
           startEditing(fieldIndex, columnKey, editValue);
         }}
-        title="Click to edit. Ctrl+V pastes from Excel. Shift+Ctrl+V merges into existing rows."
+        title="Click to select paste start. Ctrl+V fills this row and below. Double-click to edit. Shift+Ctrl+V appends."
       >
         {displayValue || "—"}
       </button>
@@ -392,13 +437,14 @@ export function EditableFieldTable({
     return (
       <div
         className="system-node__table system-node__table--editable system-node__table--paste-target nodrag nopan"
+        ref={tableRef}
         tabIndex={0}
         onPaste={handlePaste}
         onFocus={() => setAnchorCell({ fieldIndex: 0, columnKey: "label" })}
-        title="Click here, then Ctrl+V to paste from Excel"
+        title="Click a field row, then Ctrl+V to paste from Excel"
       >
         <p className="system-node__table-empty-hint nodrag nopan">
-          Click here and Ctrl+V to paste rows from Excel.
+          Click here and Ctrl+V to paste rows from Excel (field name + attribute columns).
         </p>
       </div>
     );
@@ -406,6 +452,7 @@ export function EditableFieldTable({
 
   return (
     <div
+      ref={tableRef}
       className="system-node__table system-node__table--editable nodrag nopan"
       tabIndex={0}
       onPaste={handlePaste}
@@ -439,9 +486,12 @@ export function EditableFieldTable({
       )}
 
       {fields.map((field, fieldIndex) => {
-        const isActive = activeFieldIds.has(field.id);
+        const isActive = fieldLineageActive && activeFieldIds.has(field.id);
         const isFaded = fieldLineageActive && !isActive;
-        const rowStateClass = `${isActive ? "is-active" : ""} ${isFaded ? "is-faded" : ""}`;
+        const isSelected = selectedNodeId === nodeId && selectedFieldId === field.id;
+        const rowStateClass = `${isActive ? "is-active" : ""} ${isFaded ? "is-faded" : ""} ${
+          isSelected ? "is-selected" : ""
+        }`;
 
         return (
           <SmartHoverAttributes
@@ -454,11 +504,14 @@ export function EditableFieldTable({
             <EditableTableRow
               nodeId={nodeId}
               field={field}
+              fieldIndex={fieldIndex}
               fullTableGridStyle={fullTableGridStyle}
               rowStateClass={rowStateClass}
               onFieldSelect={onFieldSelect}
+              onFieldEdit={onFieldEdit}
               onFieldReorder={onFieldReorder}
               onFieldConnectDrop={onFieldConnectDrop}
+              onAnchorPasteRow={anchorPasteRow}
             >
               <div className="system-node__table-cell system-node__table-cell--name">
                 {renderCell(field, fieldIndex, "label")}
@@ -473,7 +526,7 @@ export function EditableFieldTable({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onFieldSelect(nodeId, field.id);
+                    onFieldEdit(nodeId, field.id);
                   }}
                   className="system-node__icon-btn system-node__icon-btn--static"
                   title="Edit in sidebar"

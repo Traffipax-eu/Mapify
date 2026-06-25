@@ -75,7 +75,16 @@ function CustomObjectNodeImpl({ id, data: rawData, selected }: NodeProps<CustomO
         position={Position.Left}
         id={`parent-target-${id}`}
         variant="parent"
+        isConnectable
         className="custom-object-node__parent-handle custom-object-node__parent-handle--target"
+      />
+      <PlusHandle
+        type="target"
+        position={Position.Top}
+        id={`parent-target-${id}-top`}
+        variant="parent"
+        isConnectable
+        className="custom-object-node__parent-handle custom-object-node__parent-handle--top"
       />
 
       <div
@@ -124,7 +133,16 @@ function CustomObjectNodeImpl({ id, data: rawData, selected }: NodeProps<CustomO
         position={Position.Right}
         id={`parent-source-${id}`}
         variant="parent"
+        isConnectable
         className="custom-object-node__parent-handle custom-object-node__parent-handle--source"
+      />
+      <PlusHandle
+        type="source"
+        position={Position.Bottom}
+        id={`parent-source-${id}-bottom`}
+        variant="parent"
+        isConnectable
+        className="custom-object-node__parent-handle custom-object-node__parent-handle--bottom"
       />
     </div>
   );

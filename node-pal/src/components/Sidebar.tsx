@@ -123,6 +123,7 @@ export function Sidebar({
             )}
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2 grid grid-cols-2 gap-2">
+            <CustomObjectCreatorCard onOpen={onOpenCustomObjectCreator} />
             {CUSTOM_OBJECTS.map((object) => (
               <ArtifactCard
                 key={object.id}
@@ -133,7 +134,6 @@ export function Sidebar({
                 accent={object.accent}
               />
             ))}
-            <CustomObjectCreatorCard onOpen={onOpenCustomObjectCreator} />
           </CollapsibleContent>
         </Collapsible>
         </div>

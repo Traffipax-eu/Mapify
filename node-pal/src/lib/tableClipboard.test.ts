@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTablePastePlan, parseTabularClipboard } from "./tableClipboard";
+import { buildTablePastePlan, parseTabularClipboard, resolveTablePasteMode } from "./tableClipboard";
 
 describe("parseTabularClipboard", () => {
   it("parses tab-separated excel rows", () => {
@@ -7,6 +7,20 @@ describe("parseTabularClipboard", () => {
       ["A", "1"],
       ["B", "2"],
     ]);
+  });
+});
+
+describe("resolveTablePasteMode", () => {
+  it("merges into existing rows by default", () => {
+    expect(resolveTablePasteMode(false, 3)).toBe("merge");
+  });
+
+  it("appends when the section is empty", () => {
+    expect(resolveTablePasteMode(false, 0)).toBe("append");
+  });
+
+  it("appends when shift is held", () => {
+    expect(resolveTablePasteMode(true, 3)).toBe("append");
   });
 });
 

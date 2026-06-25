@@ -42,7 +42,7 @@ describe("edgePath auto routing", () => {
 
   it("infers port sides toward the next point", () => {
     expect(inferPortPosition({ x: 0, y: 0 }, { x: 100, y: 5 }, "exit")).toBe(Position.Right);
-    expect(inferPortPosition({ x: 100, y: 5 }, { x: 0, y: 0 }, "entry")).toBe(Position.Right);
+    expect(inferPortPosition({ x: 100, y: 5 }, { x: 0, y: 0 }, "entry")).toBe(Position.Left);
   });
 
   it("chains waypoint legs with terminal handle positions", () => {

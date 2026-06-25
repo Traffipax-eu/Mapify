@@ -82,6 +82,16 @@ function isFieldTargetHandle(handle: string): boolean {
   return handle.startsWith("field-tgt-") || (handle.startsWith("target-") && !handle.startsWith("parent-target"));
 }
 
+export function isParentConnectionHandle(handle: string | null | undefined): boolean {
+  if (!handle) return false;
+  return (
+    handle === "parent-source" ||
+    handle === "parent-target" ||
+    handle.startsWith("parent-source-") ||
+    handle.startsWith("parent-target-")
+  );
+}
+
 export function isFieldConnectionHandle(handle: string | null | undefined): boolean {
   if (!handle) return false;
   return handle.includes("field-src-") || handle.includes("field-tgt-") || isFieldSourceHandle(handle) || isFieldTargetHandle(handle);

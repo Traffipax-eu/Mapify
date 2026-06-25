@@ -11,7 +11,7 @@ export type MetadataSelectionContext = "node" | "field";
 
 interface MetadataSidebarProps {
   isOpen: boolean;
-  stackOffset?: boolean;
+  nodeType?: "system" | "customObject";
   onClose: () => void;
   nodeId: string | null;
   nodeLabel: string | null;
@@ -47,7 +47,7 @@ function safeProperties(value: ScopedProperty[] | null | undefined): ScopedPrope
 
 export function MetadataSidebar({
   isOpen,
-  stackOffset = false,
+  nodeType = "system",
   onClose,
   nodeId,
   nodeLabel,
@@ -87,13 +87,21 @@ export function MetadataSidebar({
 
   const displayName = isFieldContext ? fieldLabel ?? "Field" : nodeLabel ?? "System";
 
+  const isCustomObject = nodeType === "customObject";
+  const contextLabel = isFieldContext ? "Field" : isCustomObject ? "Custom Object" : "Block";
+  const nameLabel = isFieldContext ? "Field name" : isCustomObject ? "Object name" : "Block name";
+  const attributesLabel = isCustomObject ? "Attributes" : SCHEMA_SCOPE_LABELS.global.title;
+
   return (
     <MetadataSidebarContent
       key={`${nodeId}-${fieldId ?? "node"}`}
-      stackOffset={stackOffset}
       nodeId={nodeId}
       fieldId={fieldId}
       isFieldContext={isFieldContext}
+      isCustomObject={isCustomObject}
+      contextLabel={contextLabel}
+      nameLabel={nameLabel}
+      attributesLabel={attributesLabel}
       displayName={displayName}
       metadata={metadata}
       blockProperties={blockProperties}
@@ -118,6 +126,10 @@ function MetadataSidebarContent({
   nodeId,
   fieldId,
   isFieldContext,
+  isCustomObject,
+  contextLabel,
+  nameLabel,
+  attributesLabel,
   displayName,
   metadata,
   blockProperties,
@@ -126,7 +138,6 @@ function MetadataSidebarContent({
   lockFieldPropertyKeys,
   allowAddBlockAttributes,
   allowAddFieldAttributes,
-  stackOffset,
   onClose,
   onUpdateBlockMetadata,
   onUpdateFieldAttributeKeys,
@@ -139,6 +150,10 @@ function MetadataSidebarContent({
   nodeId: string;
   fieldId: string | null;
   isFieldContext: boolean;
+  isCustomObject: boolean;
+  contextLabel: string;
+  nameLabel: string;
+  attributesLabel: string;
   displayName: string;
   metadata: MetadataValues;
   blockProperties: ScopedProperty[];
@@ -147,7 +162,6 @@ function MetadataSidebarContent({
   lockFieldPropertyKeys: boolean;
   allowAddBlockAttributes: boolean;
   allowAddFieldAttributes: boolean;
-  stackOffset: boolean;
   onClose: () => void;
   onUpdateBlockMetadata: (nodeId: string, metadata: MetadataValues, propertyKeys?: string[]) => void;
   onUpdateFieldAttributeKeys: (nodeId: string, propertyKeys: string[]) => void;
@@ -179,16 +193,10 @@ function MetadataSidebarContent({
   };
 
   return (
-    <div
-      className={`fixed right-0 top-14 bottom-0 w-80 bg-card border-l border-border shadow-lg z-20 flex flex-col metadata-sidebar ${
-        stackOffset ? "metadata-sidebar--stacked" : ""
-      }`}
-    >
+    <div className="fixed right-0 top-14 bottom-0 w-80 bg-card border-l border-border shadow-lg z-20 flex flex-col metadata-sidebar">
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div className="min-w-0">
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {isFieldContext ? "Field" : "Block"}
-          </p>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{contextLabel}</p>
           <h2 className="text-sm font-semibold truncate">{displayName}</h2>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -212,7 +220,7 @@ function MetadataSidebarContent({
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         <div className="space-y-1.5">
           <label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {isFieldContext ? "Field name" : "Block name"}
+            {nameLabel}
           </label>
           <Input
             value={nameDraft}
@@ -240,8 +248,13 @@ function MetadataSidebarContent({
         {!isFieldContext && (
           <div className="space-y-2">
             <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              {SCHEMA_SCOPE_LABELS.global.title}
+              {attributesLabel}
             </p>
+            {isCustomObject && (
+              <p className="text-[11px] text-muted-foreground">
+                Add any key-value pairs (Owner, Contact, URL, etc.).
+              </p>
+            )}
             <MetadataKeyValueGrid
               metadata={metadata}
               properties={blockProperties}
@@ -253,6 +266,7 @@ function MetadataSidebarContent({
           </div>
         )}
 
+        {!isCustomObject && (
         <div className="space-y-2">
           <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
             {SCHEMA_SCOPE_LABELS.group.title}
@@ -280,6 +294,7 @@ function MetadataSidebarContent({
             }}
           />
         </div>
+        )}
       </div>
     </div>
   );

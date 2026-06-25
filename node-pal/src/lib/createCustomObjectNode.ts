@@ -13,6 +13,8 @@ export type CustomObjectNodeData = {
   fields?: Field[];
   collapsed?: boolean;
   tableExpanded?: boolean;
+  /** Free-form instance attributes (Owner, Contact, etc.) */
+  attributes?: MetadataValues;
   metadata?: MetadataValues;
   visibleColumns?: string[];
   fieldAttributeKeys?: string[];
@@ -35,6 +37,7 @@ export function createCustomObjectNode(
       label: overrides?.label ?? definition?.defaultName ?? "Object",
       accent: overrides?.accent ?? definition?.accent ?? "#3b82f6",
       iconId: overrides?.iconId,
+      attributes: {},
       metadata: {},
     },
   };

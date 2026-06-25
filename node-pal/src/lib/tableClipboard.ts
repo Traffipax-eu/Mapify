@@ -26,6 +26,23 @@ export type TablePastePlan = {
   newFields: TablePasteNewField[];
 };
 
+/** Shift+paste appends rows; otherwise fill downward from the anchor when fields already exist. */
+export function resolveTablePasteMode(
+  shiftKey: boolean,
+  fieldCount: number,
+): TablePasteMode {
+  if (shiftKey) return "append";
+  return fieldCount > 0 ? "merge" : "append";
+}
+
+export function resolveAnchorFieldIndex(
+  mode: TablePasteMode,
+  anchorFieldIndex: number,
+  fieldCount: number,
+): number {
+  return mode === "merge" ? anchorFieldIndex : fieldCount;
+}
+
 function rowToFieldPayload(
   row: string[],
   columnKeys: TableColumnKey[],

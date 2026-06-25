@@ -14,6 +14,26 @@ export const COPYABLE_NODE_TYPES = new Set([
 
 const PASTE_OFFSET = { x: 30, y: 30 };
 
+/** React Flow transient props — must not be copied to clipboard or new nodes. */
+function stripEphemeralNodeState(node: Node, selected: boolean): Node {
+  const {
+    dragging: _dragging,
+    positionAbsolute: _positionAbsolute,
+    resizing: _resizing,
+    selected: _selected,
+    ...stable
+  } = node as Node & {
+    dragging?: boolean;
+    positionAbsolute?: { x: number; y: number };
+    resizing?: boolean;
+  };
+
+  return {
+    ...stable,
+    selected,
+  };
+}
+
 const DISPLAY_ONLY_DATA_KEYS = [
   "inLineage",
   "faded",
@@ -70,12 +90,16 @@ export function getSelectedCopyableNodes(nodes: Node[]): Node[] {
 }
 
 export function cloneNodesForClipboard(nodes: Node[]): Node[] {
-  return getSelectedCopyableNodes(nodes).map((node) => ({
-    ...node,
-    data: cloneNodeData(node),
-    style: node.style ? { ...node.style } : undefined,
-    selected: false,
-  }));
+  return getSelectedCopyableNodes(nodes).map((node) =>
+    stripEphemeralNodeState(
+      {
+        ...node,
+        data: cloneNodeData(node),
+        style: node.style ? { ...node.style } : undefined,
+      },
+      false,
+    ),
+  );
 }
 
 export function duplicateNodesFromClipboard(
@@ -128,20 +152,26 @@ export function duplicateNodesFromClipboard(
     };
 
     if (!parentCopied) {
-      return {
-        ...base,
-        parentNode: undefined,
-        extent: undefined,
-        zIndex: node.type === "container" ? 0 : node.zIndex,
-      };
+      return stripEphemeralNodeState(
+        {
+          ...base,
+          parentNode: undefined,
+          extent: undefined,
+          zIndex: node.type === "container" ? 0 : node.zIndex,
+        },
+        true,
+      );
     }
 
-    return {
-      ...base,
-      parentNode: idMap.get(node.parentNode!)!,
-      extent: node.extent,
-      zIndex: node.zIndex,
-    };
+    return stripEphemeralNodeState(
+      {
+        ...base,
+        parentNode: idMap.get(node.parentNode!)!,
+        extent: node.extent,
+        zIndex: node.zIndex,
+      },
+      true,
+    );
   });
 }
 
@@ -150,4 +180,73 @@ export function isEditableKeyboardTarget(target: EventTarget | null): boolean {
   const tag = target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
   return target.isContentEditable;
+}
+
+/** True when focus is on a block field/table paste zone — canvas must not create a textbox on Ctrl+V. */
+export function isFieldTablePasteTarget(target: EventTarget | null): boolean {
+  const element =
+    target instanceof HTMLElement
+      ? target
+      : document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+  if (!element) return false;
+
+  return Boolean(
+    element.closest(
+      [
+        ".system-node__field-list-item-inner",
+        ".system-node__table--editable",
+        ".system-node__section-header.is-paste-target",
+        ".system-node__group-header.is-paste-target",
+        ".system-node__section-empty.is-paste-target",
+        ".system-node__group-empty.is-paste-target",
+      ].join(", "),
+    ),
+  );
+}
+
+export const MAPIFY_CLIPBOARD_MARKER = "mapify.clipboard.v1";
+
+export type MapifyClipboardPayload = {
+  mapify: typeof MAPIFY_CLIPBOARD_MARKER;
+  nodes: Node[];
+};
+
+export function serializeNodesToClipboard(nodes: Node[]): string {
+  const payload: MapifyClipboardPayload = {
+    mapify: MAPIFY_CLIPBOARD_MARKER,
+    nodes,
+  };
+  return JSON.stringify(payload);
+}
+
+export function parseClipboardNodes(text: string): Node[] | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{")) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed) as Partial<MapifyClipboardPayload>;
+    if (parsed.mapify !== MAPIFY_CLIPBOARD_MARKER || !Array.isArray(parsed.nodes)) {
+      return null;
+    }
+
+    const nodes = parsed.nodes
+      .filter(
+        (node): node is Node =>
+          Boolean(node) &&
+          typeof node === "object" &&
+          typeof (node as Node).id === "string" &&
+          COPYABLE_NODE_TYPES.has((node as Node).type ?? ""),
+      )
+      .map((node) => stripEphemeralNodeState(node, false));
+
+    return nodes.length > 0 ? nodes : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isMapifyNodeClipboard(text: string): boolean {
+  return parseClipboardNodes(text) !== null;
 }
