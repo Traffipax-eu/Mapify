@@ -78,14 +78,6 @@ function CustomObjectNodeImpl({ id, data: rawData, selected }: NodeProps<CustomO
         isConnectable
         className="custom-object-node__parent-handle custom-object-node__parent-handle--target"
       />
-      <PlusHandle
-        type="target"
-        position={Position.Top}
-        id={`parent-target-${id}-top`}
-        variant="parent"
-        isConnectable
-        className="custom-object-node__parent-handle custom-object-node__parent-handle--top"
-      />
 
       <div
         className={`custom-object-node__surface overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-sm ${

@@ -60,6 +60,7 @@ import {
   Undo2,
   Redo2,
   Share2,
+  FilePlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { workspaceStorage, type Sheet } from "@/lib/workspaceStorage";
@@ -2643,6 +2644,15 @@ function InnerCanvas() {
               </Button>
             </>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setNewProjectDialogOpen(true)}
+            title="Start a new project"
+          >
+            <FilePlus className="mr-1.5 h-4 w-4" />
+            New project
+          </Button>
           <FileMenu
             isSaving={isSaving}
             saveSuccess={saveSuccess}

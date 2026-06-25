@@ -60,30 +60,32 @@ export function WorkspaceBar({
   return (
     <div className="mapify-workspace-bar border-b border-border bg-muted/20 px-4 py-2">
       <div className="flex flex-wrap items-center gap-3">
-        <Input
-          ref={projectInputRef}
-          value={projectName}
-          onChange={(e) => setProjectName(e.target.value)}
-          onBlur={commitProjectName}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.currentTarget.blur();
-            }
-          }}
-          className="h-8 w-48 max-w-full border-transparent bg-transparent px-2 text-sm font-semibold shadow-none focus-visible:border-border focus-visible:bg-background"
-          aria-label="Project name"
-        />
+        <div className="flex shrink-0 items-center gap-2">
+          <Input
+            ref={projectInputRef}
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
+            onBlur={commitProjectName}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              }
+            }}
+            className="h-8 w-48 max-w-full border-transparent bg-transparent px-2 text-sm font-semibold shadow-none focus-visible:border-border focus-visible:bg-background"
+            aria-label="Project name"
+          />
 
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 shrink-0 text-xs"
-          onClick={onNewProject}
-        >
-          <FilePlus className="mr-1.5 h-3.5 w-3.5" />
-          New project
-        </Button>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            className="h-8 shrink-0 text-xs"
+            onClick={onNewProject}
+          >
+            <FilePlus className="mr-1.5 h-3.5 w-3.5" />
+            New project
+          </Button>
+        </div>
 
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {sheets.map((sheet) => {
