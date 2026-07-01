@@ -49,15 +49,17 @@ import { getNodeIcon, NODE_ICON_OPTIONS, type NodeIconId } from "@/lib/nodeIcons
 import { BRAND } from "@/lib/brand";
 import {
   beginFieldConnectionDrag,
-  commitFieldConnectionDrag,
+  beginContainerConnectionDrag,
+  commitConnectionDrag,
   FIELD_CONNECTION_MIME,
-  finishFieldConnectionDrag,
-  getActiveFieldConnectionSource,
-  isFieldConnectionDragActive,
-  parseFieldConnectionDrag,
+  finishConnectionDrag,
+  isConnectionDragActive,
+  isConnectionDragMime,
+  readConnectionDragSourceFromEvent,
+  serializeConnectionDrag,
   serializeFieldConnectionDrag,
-  trackFieldConnectionHoverTarget,
-  tryCommitFieldConnectionDragEnd,
+  trackConnectionHoverTarget,
+  tryCommitConnectionDragEnd,
 } from "@/lib/fieldConnectionDnD";
 import {
   FIELD_REORDER_MIME,
@@ -119,7 +121,7 @@ export type SystemNodeData = {
 
 function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeData>) {
   const data: SystemNodeData = rawData ?? { label: "System" };
-  const { schema, onUpdateNodeData, onDeleteNode, onFieldSelect, onFieldEdit, onDeleteField, onFieldConnectDrop, onRenameField, onUpdateFieldTableCell, onApplyFieldTablePaste, selectedNodeId, selectedFieldId } =
+  const { schema, onUpdateNodeData, onDeleteNode, onFieldSelect, onFieldEdit, onDeleteField, onFieldConnectDrop, onConnectDrop, onRenameField, onUpdateFieldTableCell, onApplyFieldTablePaste, selectedNodeId, selectedFieldId } =
     useNodeCanvas();
   const updateNodeInternals = useUpdateNodeInternals();
   const { hasLineage, lineageNodeIds, highlightedFieldsByNode, impactNodeIds, anchorNodeId } =
@@ -187,6 +189,7 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
   const [groupNameDraft, setGroupNameDraft] = useState("");
   const [sectionDropTargetId, setSectionDropTargetId] = useState<string | null>(null);
   const [groupDropTargetId, setGroupDropTargetId] = useState<string | null>(null);
+  const [isBlockConnectTarget, setIsBlockConnectTarget] = useState(false);
   const [pasteTarget, setPasteTarget] = useState<PasteTarget | null>(null);
 
   useEffect(() => {
@@ -213,6 +216,32 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
 
   const stopPointer = (e: React.PointerEvent | React.MouseEvent) => {
     e.stopPropagation();
+  };
+
+  const handleBlockDragOver = (event: React.DragEvent) => {
+    if (!isConnectionDragMime(event.dataTransfer.types)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    trackConnectionHoverTarget({ kind: "node", nodeId: id });
+    setIsBlockConnectTarget(true);
+  };
+
+  const handleBlockDragLeave = () => {
+    setIsBlockConnectTarget(false);
+  };
+
+  const handleBlockDrop = (event: React.DragEvent) => {
+    if (!isConnectionDragMime(event.dataTransfer.types)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setIsBlockConnectTarget(false);
+
+    const source = readConnectionDragSourceFromEvent(event.dataTransfer);
+    if (!source || source.sourceNodeId === id) return;
+
+    commitConnectionDrag();
+    onConnectDrop(source, { kind: "node", nodeId: id });
   };
 
   const toggleCollapse = (e: React.MouseEvent) => {
@@ -605,7 +634,14 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
       />
 
       <BlockInternalFieldLinks nodeId={id}>
-      <div className="system-node__surface flex flex-col overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-sm">
+      <div
+        className={`system-node__surface flex flex-col overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-sm ${
+          isBlockConnectTarget ? "system-node__surface--connect-target" : ""
+        }`}
+        onDragOver={handleBlockDragOver}
+        onDragLeave={handleBlockDragLeave}
+        onDrop={handleBlockDrop}
+      >
         <SmartHoverAttributes
           title={data.label ?? "System"}
           metadata={data.metadata}
@@ -696,8 +732,10 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                   onDrop={(event) => handleSectionDrop(event, section.id)}
                 >
                   {showSectionChrome && (
-                    <div
-                      className={`system-node__section-header ${
+                    <ContainerRow
+                      nodeId={id}
+                      containerId={section.id}
+                      className={`${
                         section.showHeader ? "" : "system-node__section-header--minimal"
                       } ${isActivePasteTarget(section.id) ? "is-paste-target" : ""}`}
                       tabIndex={-1}
@@ -707,86 +745,90 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                         selectPasteTarget(section.id);
                         focusPasteZone(event);
                       }}
-                      title="Click, then Ctrl+V to paste from Excel"
+                      title="Drag to connect · Click, then Ctrl+V to paste from Excel"
                     >
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleSectionCollapsed(section.id, e)}
-                        className="system-node__section-chevron nodrag nopan"
-                        title={sectionCollapsed ? "Expand section" : "Collapse section"}
-                      >
-                        {sectionCollapsed ? (
-                          <ChevronRight className="h-3 w-3" />
-                        ) : (
-                          <ChevronDown className="h-3 w-3" />
-                        )}
-                      </button>
-                      {section.showHeader && (
-                        <>
-                          {isEditingSection ? (
-                            <input
-                              autoFocus
-                              value={sectionNameDraft}
-                              onChange={(e) => setSectionNameDraft(e.target.value)}
-                              onBlur={() => commitSectionName(section.id)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") commitSectionName(section.id);
-                                if (e.key === "Escape") setEditingSectionId(null);
-                              }}
-                              className="system-node__section-title-input nodrag nopan nowheel"
-                              onPointerDown={stopPointer}
-                              onClick={stopPointer}
-                            />
+                      <div className="flex min-w-0 flex-1 flex-row items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => handleToggleSectionCollapsed(section.id, e)}
+                          className="system-node__section-chevron nodrag nopan"
+                          title={sectionCollapsed ? "Expand section" : "Collapse section"}
+                        >
+                          {sectionCollapsed ? (
+                            <ChevronRight className="h-3 w-3" />
                           ) : (
-                            <button
-                              type="button"
-                              className="system-node__section-title nodrag nopan"
-                              onDoubleClick={(e) => {
-                                e.stopPropagation();
-                                setSectionNameDraft(section.name);
-                                setEditingSectionId(section.id);
-                              }}
-                              title="Double-click to rename section"
-                            >
-                              {section.name}
-                            </button>
+                            <ChevronDown className="h-3 w-3" />
                           )}
-                        </>
-                      )}
-                      {sectionCollapsed && sectionFieldCount > 0 && (
-                        <span className="system-node__section-count">{sectionFieldCount}</span>
-                      )}
-                      {!sectionCollapsed && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            addGroup(section.id);
-                          }}
-                          className="system-node__group-add-btn nodrag nopan"
-                          title="Add group"
-                        >
-                          <Layers className="h-3 w-3" />
                         </button>
-                      )}
-                      {sections.length > 1 && section.showHeader && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteSection(section.id);
-                          }}
-                          className="system-node__section-delete nodrag nopan"
-                          title={
-                            sectionFields.length > 0
-                              ? "Remove section (fields move to General)"
-                              : "Remove section"
-                          }
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      )}
-                    </div>
+                        {section.showHeader && (
+                          <>
+                            {isEditingSection ? (
+                              <input
+                                autoFocus
+                                value={sectionNameDraft}
+                                onChange={(e) => setSectionNameDraft(e.target.value)}
+                                onBlur={() => commitSectionName(section.id)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") commitSectionName(section.id);
+                                  if (e.key === "Escape") setEditingSectionId(null);
+                                }}
+                                className="system-node__section-title-input nodrag nopan nowheel min-w-0 flex-1"
+                                onPointerDown={stopPointer}
+                                onClick={stopPointer}
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                className="system-node__section-title nodrag nopan min-w-0 flex-1"
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  setSectionNameDraft(section.name);
+                                  setEditingSectionId(section.id);
+                                }}
+                                title="Double-click to rename section"
+                              >
+                                {section.name}
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {sectionCollapsed && sectionFieldCount > 0 && (
+                          <span className="system-node__section-count">{sectionFieldCount}</span>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 flex-row items-center gap-1 nodrag nopan">
+                        {!sectionCollapsed && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              addGroup(section.id);
+                            }}
+                            className="system-node__group-add-btn nodrag nopan"
+                            title="Add group"
+                          >
+                            <Layers className="h-3 w-3" />
+                          </button>
+                        )}
+                        {sections.length > 1 && section.showHeader && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteSection(section.id);
+                            }}
+                            className="system-node__section-delete nodrag nopan"
+                            title={
+                              sectionFields.length > 0
+                                ? "Remove section (fields move to General)"
+                                : "Remove section"
+                            }
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    </ContainerRow>
                   )}
 
                   {!sectionCollapsed && (
@@ -842,10 +884,10 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                             onDragLeave={() => setGroupDropTargetId(null)}
                             onDrop={(event) => handleGroupDrop(event, section.id, group.id)}
                           >
-                            <div
-                              className={`system-node__group-header ${
-                                isActivePasteTarget(section.id, group.id) ? "is-paste-target" : ""
-                              }`}
+                            <ContainerRow
+                              nodeId={id}
+                              containerId={group.id}
+                              className={isActivePasteTarget(section.id, group.id) ? "is-paste-target" : ""}
                               tabIndex={-1}
                               onPaste={handlePasteAtTarget}
                               onClick={(event) => {
@@ -853,64 +895,68 @@ function SystemNodeImpl({ id, data: rawData, selected }: NodeProps<SystemNodeDat
                                 selectPasteTarget(section.id, group.id);
                                 focusPasteZone(event);
                               }}
-                              title="Click, then Ctrl+V to paste from Excel"
+                              title="Drag to connect · Click, then Ctrl+V to paste from Excel"
                             >
-                              <button
-                                type="button"
-                                onClick={(e) => handleToggleGroupCollapsed(group.id, e)}
-                                className="system-node__group-chevron nodrag nopan"
-                                title={groupCollapsed ? "Expand group" : "Collapse group"}
-                              >
-                                {groupCollapsed ? (
-                                  <ChevronRight className="h-3 w-3" />
+                              <div className="flex min-w-0 flex-1 flex-row items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleToggleGroupCollapsed(group.id, e)}
+                                  className="system-node__group-chevron nodrag nopan"
+                                  title={groupCollapsed ? "Expand group" : "Collapse group"}
+                                >
+                                  {groupCollapsed ? (
+                                    <ChevronRight className="h-3 w-3" />
+                                  ) : (
+                                    <ChevronDown className="h-3 w-3" />
+                                  )}
+                                </button>
+                                {isEditingGroup ? (
+                                  <input
+                                    autoFocus
+                                    value={groupNameDraft}
+                                    onChange={(e) => setGroupNameDraft(e.target.value)}
+                                    onBlur={() => commitGroupName(group.id)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") commitGroupName(group.id);
+                                      if (e.key === "Escape") setEditingGroupId(null);
+                                    }}
+                                    className="system-node__group-title-input nodrag nopan nowheel min-w-0 flex-1"
+                                    onPointerDown={stopPointer}
+                                    onClick={stopPointer}
+                                  />
                                 ) : (
-                                  <ChevronDown className="h-3 w-3" />
+                                  <span className="system-node__group-title min-w-0 flex-1">{group.name}</span>
                                 )}
-                              </button>
-                              {isEditingGroup ? (
-                                <input
-                                  autoFocus
-                                  value={groupNameDraft}
-                                  onChange={(e) => setGroupNameDraft(e.target.value)}
-                                  onBlur={() => commitGroupName(group.id)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") commitGroupName(group.id);
-                                    if (e.key === "Escape") setEditingGroupId(null);
+                                {groupCollapsed && groupFieldCount > 0 && (
+                                  <span className="system-node__group-count">{groupFieldCount}</span>
+                                )}
+                              </div>
+                              <div className="flex shrink-0 flex-row items-center gap-1 nodrag nopan">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setGroupNameDraft(group.name);
+                                    setEditingGroupId(group.id);
                                   }}
-                                  className="system-node__group-title-input nodrag nopan nowheel"
-                                  onPointerDown={stopPointer}
-                                  onClick={stopPointer}
-                                />
-                              ) : (
-                                <span className="system-node__group-title">{group.name}</span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setGroupNameDraft(group.name);
-                                  setEditingGroupId(group.id);
-                                }}
-                                className="system-node__group-rename nodrag nopan"
-                                title="Rename group"
-                              >
-                                <Pencil className="h-3 w-3" />
-                              </button>
-                              {groupCollapsed && groupFieldCount > 0 && (
-                                <span className="system-node__group-count">{groupFieldCount}</span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteGroup(group.id);
-                                }}
-                                className="system-node__group-delete nodrag nopan"
-                                title="Remove group (fields stay in section)"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
+                                  className="system-node__group-rename nodrag nopan"
+                                  title="Rename group"
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteGroup(group.id);
+                                  }}
+                                  className="system-node__group-delete nodrag nopan"
+                                  title="Remove group (fields stay in section)"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </ContainerRow>
 
                             {!groupCollapsed && (
                               <div
@@ -1031,6 +1077,155 @@ type FieldRowProps = {
   onPaste?: (event: React.ClipboardEvent) => void;
 };
 
+function ContainerConnectionHandle({
+  containerId,
+  side,
+  type,
+}: {
+  containerId: string;
+  side: "left" | "right";
+  type: "source" | "target";
+}) {
+  const handleId =
+    type === "source" ? `container-src-${containerId}` : `container-tgt-${containerId}`;
+
+  return (
+    <PlusHandle
+      type={type}
+      position={side === "left" ? Position.Left : Position.Right}
+      id={handleId}
+      variant="field"
+      className={`field-handle field-handle--${side} opacity-0`}
+    />
+  );
+}
+
+function ContainerRow({
+  nodeId,
+  containerId,
+  className = "",
+  innerClassName = "",
+  tabIndex,
+  title,
+  onPaste,
+  onClick,
+  children,
+}: {
+  nodeId: string;
+  containerId: string;
+  className?: string;
+  innerClassName?: string;
+  tabIndex?: number;
+  title?: string;
+  onPaste?: (event: React.ClipboardEvent) => void;
+  onClick?: (event: React.MouseEvent) => void;
+  children: React.ReactNode;
+}) {
+  const { onConnectDrop } = useNodeCanvas();
+  const [isConnectTarget, setIsConnectTarget] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartedRef = useRef(false);
+
+  const handleDragStart = (event: React.DragEvent) => {
+    const target = event.target as HTMLElement;
+    if (target.closest(".react-flow__handle") || target.closest("button, input")) {
+      event.preventDefault();
+      return;
+    }
+    event.stopPropagation();
+    dragStartedRef.current = true;
+    setIsDragging(true);
+
+    const payload = {
+      kind: "container-connection" as const,
+      sourceNodeId: nodeId,
+      sourceContainerId: containerId,
+    };
+    beginContainerConnectionDrag(payload);
+    event.dataTransfer.setData(FIELD_CONNECTION_MIME, serializeConnectionDrag(payload));
+    event.dataTransfer.effectAllowed = "copy";
+  };
+
+  const handleDragEnd = (event: React.DragEvent) => {
+    setIsDragging(false);
+    setIsConnectTarget(false);
+    if (isConnectionDragActive()) {
+      tryCommitConnectionDragEnd(event.clientX, event.clientY, onConnectDrop);
+      finishConnectionDrag();
+    }
+    window.setTimeout(() => {
+      dragStartedRef.current = false;
+    }, 0);
+  };
+
+  const handleDragOver = (event: React.DragEvent) => {
+    if (!isConnectionDragMime(event.dataTransfer.types)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    trackConnectionHoverTarget({ kind: "container", nodeId, containerId });
+    setIsConnectTarget(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsConnectTarget(false);
+  };
+
+  const handleDrop = (event: React.DragEvent) => {
+    if (!isConnectionDragMime(event.dataTransfer.types)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setIsConnectTarget(false);
+    setIsDragging(false);
+
+    const source = readConnectionDragSourceFromEvent(event.dataTransfer);
+    if (!source) return;
+    if (
+      source.kind === "container-connection" &&
+      source.sourceNodeId === nodeId &&
+      source.sourceContainerId === containerId
+    ) {
+      return;
+    }
+
+    commitConnectionDrag();
+    onConnectDrop(source, { kind: "container", nodeId, containerId });
+  };
+
+  return (
+    <div
+      className={`system-node__container-row-outer nodrag nopan pointer-events-auto ${
+        isConnectTarget ? "is-connect-target" : ""
+      } ${isDragging ? "is-dragging" : ""}`}
+      data-container-row-id={containerId}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <div className="system-node__field-handle-col system-node__field-handle-col--left nodrag nopan pointer-events-auto">
+        <ContainerConnectionHandle containerId={containerId} side="left" type="target" />
+      </div>
+      <div
+        className={`system-node__container-row-inner flex w-full min-w-0 flex-row items-center justify-between gap-2 border-y border-slate-200 bg-slate-50 px-3 py-1 ${className} ${innerClassName}`.trim()}
+        draggable
+        tabIndex={tabIndex}
+        title={title}
+        onPaste={onPaste}
+        onPointerDown={(event) => event.stopPropagation()}
+        onMouseDown={(event) => event.stopPropagation()}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onClick={onClick}
+      >
+        {children}
+      </div>
+      <div className="system-node__field-handle-col system-node__field-handle-col--right nodrag nopan pointer-events-auto">
+        <ContainerConnectionHandle containerId={containerId} side="right" type="source" />
+      </div>
+    </div>
+  );
+}
+
 function FieldConnectionHandle({
   nodeId,
   fieldId,
@@ -1075,6 +1270,7 @@ export function FieldRow({
   onSelectPasteTarget,
   onPaste,
 }: FieldRowProps) {
+  const { onConnectDrop } = useNodeCanvas();
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isConnectTarget, setIsConnectTarget] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -1126,9 +1322,9 @@ export function FieldRow({
     setIsDragging(false);
     setIsDropTarget(false);
     setIsConnectTarget(false);
-    if (isFieldConnectionDragActive()) {
-      tryCommitFieldConnectionDragEnd(e.clientX, e.clientY, onFieldConnectDrop);
-      finishFieldConnectionDrag();
+    if (isConnectionDragActive()) {
+      tryCommitConnectionDragEnd(e.clientX, e.clientY, onConnectDrop);
+      finishConnectionDrag();
     }
     window.setTimeout(() => {
       dragStartedRef.current = false;
@@ -1136,11 +1332,11 @@ export function FieldRow({
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes(FIELD_CONNECTION_MIME)) {
+    if (isConnectionDragMime(e.dataTransfer.types)) {
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = "copy";
-      trackFieldConnectionHoverTarget({ nodeId, fieldId: field.id });
+      trackConnectionHoverTarget({ kind: "field", nodeId, fieldId: field.id });
       setIsConnectTarget(true);
       setIsDropTarget(false);
       return;
@@ -1166,16 +1362,14 @@ export function FieldRow({
     setIsConnectTarget(false);
     setIsDragging(false);
 
-    if (e.dataTransfer.types.includes(FIELD_CONNECTION_MIME)) {
-      let source = parseFieldConnectionDrag(e.dataTransfer.getData(FIELD_CONNECTION_MIME));
-      if (!source) source = getActiveFieldConnectionSource();
+    if (isConnectionDragMime(e.dataTransfer.types)) {
+      const source = readConnectionDragSourceFromEvent(e.dataTransfer);
       if (!source) return;
-      if (source.sourceNodeId === nodeId && source.sourceFieldId === field.id) return;
-      commitFieldConnectionDrag();
-      onFieldConnectDrop(
-        { nodeId: source.sourceNodeId, fieldId: source.sourceFieldId },
-        { nodeId, fieldId: field.id },
-      );
+      if (source.kind === "field-connection" && source.sourceNodeId === nodeId && source.sourceFieldId === field.id) {
+        return;
+      }
+      commitConnectionDrag();
+      onConnectDrop(source, { kind: "field", nodeId, fieldId: field.id });
       return;
     }
 

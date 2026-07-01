@@ -13,16 +13,17 @@ import type { ScopedProperty } from "@/lib/schemaProperties";
 import { SCHEMA_SCOPE_LABELS } from "@/lib/schemaLabels";
 import {
   beginFieldConnectionDrag,
-  commitFieldConnectionDrag,
+  commitConnectionDrag,
   FIELD_CONNECTION_MIME,
-  finishFieldConnectionDrag,
-  getActiveFieldConnectionSource,
-  isFieldConnectionDragActive,
-  parseFieldConnectionDrag,
+  finishConnectionDrag,
+  isConnectionDragActive,
+  isConnectionDragMime,
+  readConnectionDragSourceFromEvent,
   serializeFieldConnectionDrag,
-  trackFieldConnectionHoverTarget,
-  tryCommitFieldConnectionDragEnd,
+  trackConnectionHoverTarget,
+  tryCommitConnectionDragEnd,
 } from "@/lib/fieldConnectionDnD";
+import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
 import {
   FIELD_REORDER_MIME,
   parseFieldReorder,
@@ -127,6 +128,7 @@ function EditableTableRow({
   ) => void;
   onAnchorPasteRow: (fieldIndex: number, columnKey: TableColumnKey) => void;
 }) {
+  const { onConnectDrop } = useNodeCanvas();
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isConnectTarget, setIsConnectTarget] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -190,9 +192,9 @@ function EditableTableRow({
     setIsDragging(false);
     setIsDropTarget(false);
     setIsConnectTarget(false);
-    if (isFieldConnectionDragActive()) {
-      tryCommitFieldConnectionDragEnd(e.clientX, e.clientY, onFieldConnectDrop);
-      finishFieldConnectionDrag();
+    if (isConnectionDragActive()) {
+      tryCommitConnectionDragEnd(e.clientX, e.clientY, onConnectDrop);
+      finishConnectionDrag();
     }
     window.setTimeout(() => {
       dragStartedRef.current = false;
@@ -200,11 +202,11 @@ function EditableTableRow({
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes(FIELD_CONNECTION_MIME)) {
+    if (isConnectionDragMime(e.dataTransfer.types)) {
       e.preventDefault();
       e.stopPropagation();
       e.dataTransfer.dropEffect = "copy";
-      trackFieldConnectionHoverTarget({ nodeId, fieldId: field.id });
+      trackConnectionHoverTarget({ kind: "field", nodeId, fieldId: field.id });
       setIsConnectTarget(true);
       setIsDropTarget(false);
       return;
@@ -242,16 +244,18 @@ function EditableTableRow({
           setIsConnectTarget(false);
           setIsDragging(false);
 
-          if (e.dataTransfer.types.includes(FIELD_CONNECTION_MIME)) {
-            let source = parseFieldConnectionDrag(e.dataTransfer.getData(FIELD_CONNECTION_MIME));
-            if (!source) source = getActiveFieldConnectionSource();
+          if (isConnectionDragMime(e.dataTransfer.types)) {
+            const source = readConnectionDragSourceFromEvent(e.dataTransfer);
             if (!source) return;
-            if (source.sourceNodeId === nodeId && source.sourceFieldId === field.id) return;
-            commitFieldConnectionDrag();
-            onFieldConnectDrop(
-              { nodeId: source.sourceNodeId, fieldId: source.sourceFieldId },
-              { nodeId, fieldId: field.id },
-            );
+            if (
+              source.kind === "field-connection" &&
+              source.sourceNodeId === nodeId &&
+              source.sourceFieldId === field.id
+            ) {
+              return;
+            }
+            commitConnectionDrag();
+            onConnectDrop(source, { kind: "field", nodeId, fieldId: field.id });
             return;
           }
 

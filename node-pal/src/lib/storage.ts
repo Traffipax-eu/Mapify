@@ -60,13 +60,19 @@ export type EdgeLineStyle = "solid" | "dashed";
 
 export type EdgeControlPoint = { x: number; y: number };
 
+export type EdgeSyncType = "push" | "pull" | "stream" | "api" | "none";
+
 export interface EdgeData {
   sourceFieldId?: string | null;
   targetFieldId?: string | null;
+  sourceContainerId?: string | null;
+  targetContainerId?: string | null;
   sourceNodeId?: string;
   targetNodeId?: string;
   label?: string;
   description?: string;
+  /** Semantic dataflow mechanic — drives line style, arrows, and animation. */
+  syncType?: EdgeSyncType;
   pathType?: EdgePathType;
   lineStyle?: EdgeLineStyle;
   markerStart?: EdgeMarkerStyle;

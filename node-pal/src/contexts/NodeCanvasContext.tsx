@@ -27,6 +27,15 @@ export type NodeCanvasContextValue = {
     source: { nodeId: string; fieldId: string },
     targetNodeId: string,
   ) => void;
+  onConnectDrop: (
+    source:
+      | { kind: "field-connection"; sourceNodeId: string; sourceFieldId: string }
+      | { kind: "container-connection"; sourceNodeId: string; sourceContainerId: string },
+    target:
+      | { kind: "field"; nodeId: string; fieldId: string }
+      | { kind: "container"; nodeId: string; containerId: string }
+      | { kind: "node"; nodeId: string },
+  ) => void;
   onRenameField: (nodeId: string, fieldId: string, label: string) => void;
   onUpdateFieldTableCell: (nodeId: string, fieldId: string, columnId: string, value: string) => void;
   onApplyFieldTablePaste: (

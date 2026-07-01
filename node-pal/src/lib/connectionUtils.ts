@@ -7,9 +7,37 @@ export type NormalizedConnection = {
   targetHandle: string;
   sourceFieldId: string | null;
   targetFieldId: string | null;
+  sourceContainerId: string | null;
+  targetContainerId: string | null;
   isFieldToField: boolean;
   isParentToParent: boolean;
 };
+
+export function containerSourceHandle(containerId: string) {
+  return `container-src-${containerId}`;
+}
+
+export function containerTargetHandle(containerId: string) {
+  return `container-tgt-${containerId}`;
+}
+
+export function parseContainerSourceId(handle: string): string | null {
+  if (handle.startsWith("container-src-")) {
+    return handle.slice("container-src-".length);
+  }
+  return null;
+}
+
+export function parseContainerTargetId(handle: string): string | null {
+  if (handle.startsWith("container-tgt-")) {
+    return handle.slice("container-tgt-".length);
+  }
+  return null;
+}
+
+export function parseContainerId(handle: string): string | null {
+  return parseContainerSourceId(handle) ?? parseContainerTargetId(handle);
+}
 
 export function parentSourceHandle(nodeId: string) {
   return `parent-source-${nodeId}`;
@@ -97,6 +125,19 @@ export function isFieldConnectionHandle(handle: string | null | undefined): bool
   return handle.includes("field-src-") || handle.includes("field-tgt-") || isFieldSourceHandle(handle) || isFieldTargetHandle(handle);
 }
 
+export function isContainerConnectionHandle(handle: string | null | undefined): boolean {
+  if (!handle) return false;
+  return handle.startsWith("container-src-") || handle.startsWith("container-tgt-");
+}
+
+function isContainerSourceHandle(handle: string): boolean {
+  return handle.startsWith("container-src-");
+}
+
+function isContainerTargetHandle(handle: string): boolean {
+  return handle.startsWith("container-tgt-");
+}
+
 export function normalizeConnection(params: Connection): NormalizedConnection | null {
   if (!params.source || !params.target) return null;
 
@@ -117,6 +158,11 @@ export function normalizeConnection(params: Connection): NormalizedConnection | 
     targetNodeId = params.source;
     sourceHandle = targetHandle;
     targetHandle = params.sourceHandle ?? "";
+  } else if (isContainerTargetHandle(sourceHandle) && isContainerSourceHandle(targetHandle)) {
+    sourceNodeId = params.target;
+    targetNodeId = params.source;
+    sourceHandle = targetHandle;
+    targetHandle = params.sourceHandle ?? "";
   }
 
   if (isTargetParentHandle(sourceHandle) && isSourceParentHandle(targetHandle)) {
@@ -128,53 +174,94 @@ export function normalizeConnection(params: Connection): NormalizedConnection | 
 
   let sourceFieldId = parseFieldId(sourceHandle);
   let targetFieldId = parseFieldId(targetHandle);
+  let sourceContainerId = parseContainerId(sourceHandle);
+  let targetContainerId = parseContainerId(targetHandle);
   const sourceParent = isParentHandle(sourceHandle);
   const targetParent = isParentHandle(targetHandle);
 
-  if (!sourceHandle || (!sourceParent && !sourceFieldId)) {
+  if (!sourceHandle || (!sourceParent && !sourceFieldId && !sourceContainerId)) {
     sourceHandle = sourceFieldId
       ? fieldSourceHandle(sourceNodeId, sourceFieldId)
-      : parentSourceHandle(sourceNodeId);
+      : sourceContainerId
+        ? containerSourceHandle(sourceContainerId)
+        : parentSourceHandle(sourceNodeId);
     sourceFieldId = parseFieldId(sourceHandle);
+    sourceContainerId = parseContainerId(sourceHandle);
   }
 
-  if (!targetHandle || (!targetParent && !targetFieldId)) {
+  if (!targetHandle || (!targetParent && !targetFieldId && !targetContainerId)) {
     targetHandle = targetFieldId
       ? fieldTargetHandle(targetNodeId, targetFieldId)
-      : parentTargetHandle(targetNodeId);
+      : targetContainerId
+        ? containerTargetHandle(targetContainerId)
+        : parentTargetHandle(targetNodeId);
     targetFieldId = parseFieldId(targetHandle);
+    targetContainerId = parseContainerId(targetHandle);
   }
 
-  if (isParentHandle(sourceHandle) && !sourceFieldId) {
+  if (isParentHandle(sourceHandle) && !sourceFieldId && !sourceContainerId) {
     sourceHandle = parentSourceHandle(sourceNodeId);
   }
-  if (isParentHandle(targetHandle) && !targetFieldId) {
+  if (isParentHandle(targetHandle) && !targetFieldId && !targetContainerId) {
     targetHandle = parentTargetHandle(targetNodeId);
   }
 
   if (sourceFieldId && !sourceHandle.startsWith("field-src-")) {
     sourceHandle = fieldSourceHandle(sourceNodeId, sourceFieldId);
+    sourceContainerId = null;
   }
   if (targetFieldId && !targetHandle.startsWith("field-tgt-")) {
     targetHandle = fieldTargetHandle(targetNodeId, targetFieldId);
+    targetContainerId = null;
+  }
+
+  if (sourceContainerId && !sourceHandle.startsWith("container-src-")) {
+    sourceHandle = containerSourceHandle(sourceContainerId);
+    sourceFieldId = null;
+  }
+  if (targetContainerId && !targetHandle.startsWith("container-tgt-")) {
+    targetHandle = containerTargetHandle(targetContainerId);
+    targetFieldId = null;
   }
 
   sourceFieldId = parseFieldId(sourceHandle);
   targetFieldId = parseFieldId(targetHandle);
+  sourceContainerId = parseContainerId(sourceHandle);
+  targetContainerId = parseContainerId(targetHandle);
 
   const isFieldToField = Boolean(sourceFieldId && targetFieldId);
-  const isParentToParent = Boolean(!sourceFieldId && !targetFieldId);
-  const isFieldToParent = Boolean(sourceFieldId && !targetFieldId);
-  const isParentToField = Boolean(!sourceFieldId && targetFieldId);
+  const isParentToParent = Boolean(!sourceFieldId && !targetFieldId && !sourceContainerId && !targetContainerId);
+  const isFieldToParent = Boolean(sourceFieldId && !targetFieldId && !targetContainerId);
+  const isParentToField = Boolean(!sourceFieldId && !sourceContainerId && targetFieldId);
+  const isContainerToContainer = Boolean(sourceContainerId && targetContainerId);
+  const isFieldToContainer = Boolean(sourceFieldId && targetContainerId);
+  const isContainerToField = Boolean(sourceContainerId && targetFieldId);
+  const isParentToContainer = Boolean(!sourceFieldId && !sourceContainerId && targetContainerId && sourceParent);
+  const isContainerToParent = Boolean(sourceContainerId && !targetFieldId && !targetContainerId && targetParent);
 
   const rejectInvalidSameNode = (conn: NormalizedConnection): NormalizedConnection | null => {
     if (conn.sourceNodeId !== conn.targetNodeId) return conn;
-    if (!conn.isFieldToField) return null;
-    if (conn.sourceFieldId === conn.targetFieldId) return null;
+    if (conn.isFieldToField) {
+      if (conn.sourceFieldId === conn.targetFieldId) return null;
+      return conn;
+    }
+    if (conn.sourceContainerId && conn.targetContainerId && conn.sourceContainerId === conn.targetContainerId) {
+      return null;
+    }
     return conn;
   };
 
-  if (!isFieldToField && !isParentToParent && !isFieldToParent && !isParentToField) {
+  if (
+    !isFieldToField &&
+    !isParentToParent &&
+    !isFieldToParent &&
+    !isParentToField &&
+    !isContainerToContainer &&
+    !isFieldToContainer &&
+    !isContainerToField &&
+    !isParentToContainer &&
+    !isContainerToParent
+  ) {
     return rejectInvalidSameNode({
       sourceNodeId,
       targetNodeId,
@@ -182,6 +269,8 @@ export function normalizeConnection(params: Connection): NormalizedConnection | 
       targetHandle: parentTargetHandle(targetNodeId),
       sourceFieldId: null,
       targetFieldId: null,
+      sourceContainerId: null,
+      targetContainerId: null,
       isFieldToField: false,
       isParentToParent: true,
     });
@@ -194,6 +283,8 @@ export function normalizeConnection(params: Connection): NormalizedConnection | 
     targetHandle,
     sourceFieldId,
     targetFieldId,
+    sourceContainerId,
+    targetContainerId,
     isFieldToField,
     isParentToParent,
   });
@@ -221,4 +312,40 @@ export function upgradeConnectionWithFieldTarget(
     isFieldToField: Boolean(sourceFieldId && targetFieldId),
     isParentToParent: !sourceFieldId && !targetFieldId,
   };
+}
+
+type DragDropSource =
+  | { kind: "field-connection"; sourceNodeId: string; sourceFieldId: string }
+  | { kind: "container-connection"; sourceNodeId: string; sourceContainerId: string };
+
+type DragDropTarget =
+  | { kind: "field"; nodeId: string; fieldId: string }
+  | { kind: "container"; nodeId: string; containerId: string }
+  | { kind: "node"; nodeId: string };
+
+export function connectionFromDragDrop(
+  source: DragDropSource,
+  target: DragDropTarget,
+): NormalizedConnection | null {
+  const sourceNodeId = source.sourceNodeId;
+  const targetNodeId = target.nodeId;
+
+  const sourceHandle =
+    source.kind === "field-connection"
+      ? fieldSourceHandle(sourceNodeId, source.sourceFieldId)
+      : containerSourceHandle(source.sourceContainerId);
+
+  const targetHandle =
+    target.kind === "field"
+      ? fieldTargetHandle(target.nodeId, target.fieldId)
+      : target.kind === "container"
+        ? containerTargetHandle(target.containerId)
+        : parentTargetHandle(target.nodeId);
+
+  return normalizeConnection({
+    source: sourceNodeId,
+    target: targetNodeId,
+    sourceHandle,
+    targetHandle,
+  });
 }

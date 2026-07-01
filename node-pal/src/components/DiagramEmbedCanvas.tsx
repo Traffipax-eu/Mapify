@@ -163,6 +163,7 @@ function DiagramEmbedCanvasInner({ payload, className }: Props) {
       onDeleteField: () => undefined,
       onFieldConnectDrop: () => undefined,
       onFieldToNodeConnectDrop: () => undefined,
+      onConnectDrop: () => undefined,
       onRenameField: () => undefined,
       onUpdateFieldTableCell: () => undefined,
       onApplyFieldTablePaste: () => undefined,

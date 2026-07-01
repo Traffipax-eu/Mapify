@@ -20,6 +20,7 @@ import {
 } from "@/lib/edgePath";
 import { buildNodeLookup } from "@/lib/containerUtils";
 import { resolveSmartEdgeTerminals } from "@/lib/smartEdgeRouting";
+import { getSyncVisuals, resolveEdgeSyncType } from "@/lib/edgeSyncType";
 import type { EdgeData, EdgePathType } from "@/lib/storage";
 
 export type CustomEdgeData = EdgeData;
@@ -68,6 +69,8 @@ function CustomEdgeImpl({
   id,
   source,
   target: targetId,
+  sourceHandle,
+  targetHandle,
   sourceX,
   sourceY,
   targetX,
@@ -87,7 +90,17 @@ function CustomEdgeImpl({
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
 
   const pathType = data?.pathType ?? "step";
-  const lineStyle = data?.lineStyle ?? "solid";
+  const syncType = resolveEdgeSyncType(data);
+  const isLineage = animated && (className?.includes("edge-lineage") ?? false);
+  const useSourceFieldTerminal = Boolean(data?.sourceFieldId && sourceHandle?.startsWith("field-src-"));
+  const useTargetFieldTerminal = Boolean(data?.targetFieldId && targetHandle?.startsWith("field-tgt-"));
+  const syncVisuals = getSyncVisuals(syncType, {
+    selected,
+    inLineage: isLineage,
+    manualLineStyle: data?.lineStyle,
+  });
+  // Semantic sync types lock the line style; only "none"/custom honors data.lineStyle.
+  const lineStyle = syncVisuals.lineStyle;
 
   const smartTerminals = useMemo(
     () =>
@@ -98,8 +111,8 @@ function CustomEdgeImpl({
         { x: targetX, y: targetY },
         nodes,
         {
-          sourceFieldId: data?.sourceFieldId ?? null,
-          targetFieldId: data?.targetFieldId ?? null,
+          sourceFieldId: useSourceFieldTerminal ? data?.sourceFieldId ?? null : null,
+          targetFieldId: useTargetFieldTerminal ? data?.targetFieldId ?? null : null,
         },
       ),
     [
@@ -113,6 +126,8 @@ function CustomEdgeImpl({
       nodes,
       data?.sourceFieldId,
       data?.targetFieldId,
+      useSourceFieldTerminal,
+      useTargetFieldTerminal,
     ],
   );
 
@@ -166,29 +181,31 @@ function CustomEdgeImpl({
     pathType,
   ]);
 
-  const isLineage = animated && (className?.includes("edge-lineage") ?? false);
-  const strokeColor = isLineage
-    ? "oklch(0.72 0.22 35)"
-    : data?.rerouted
-      ? "#f97316"
-      : selected
-        ? "#2563eb"
-        : "#64748b";
-
   const isDashed = !isLineage && !data?.rerouted && lineStyle === "dashed";
   const isDragging = draggingIndex !== null;
+
+  const strokeColor = data?.rerouted
+    ? "#f97316"
+    : syncVisuals.strokeColor;
 
   const edgeStyle = {
     stroke: strokeColor,
     strokeWidth: isLineage ? 3 : selected ? 2.5 : 2,
     strokeDasharray: isLineage ? "8 5" : data?.rerouted ? "5 5" : isDashed ? "8 6" : undefined,
-    animation: isLineage ? "lineage-dash 1s linear infinite" : undefined,
+    animation:
+      isLineage
+        ? "lineage-dash 1s linear infinite"
+        : syncType === "stream" && !data?.rerouted
+          ? "edge-stream-flow 0.9s linear infinite"
+          : undefined,
     transition: isDragging ? "none" : "d 0.18s ease",
   };
 
   const labelAnchorY = labelY - 18;
-  const resolvedMarkerStart = markerStart ?? buildMarker(data?.markerStart ?? "none", strokeColor);
-  const resolvedMarkerEnd = markerEnd ?? buildMarker(data?.markerEnd ?? "arrowclosed", strokeColor);
+  const markerStartStyle = data?.markerStart ?? syncVisuals.markerStart;
+  const markerEndStyle = data?.markerEnd ?? syncVisuals.markerEnd;
+  const resolvedMarkerStart = markerStart ?? buildMarker(markerStartStyle, strokeColor);
+  const resolvedMarkerEnd = markerEnd ?? buildMarker(markerEndStyle, strokeColor);
   const labelText = data?.label?.trim() ?? "";
 
   const updateWaypoints = useCallback(

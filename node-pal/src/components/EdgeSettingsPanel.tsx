@@ -9,6 +9,10 @@ import {
   MoveHorizontal,
   X,
   Trash2,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Radio,
+  Webhook,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +21,13 @@ import type { Edge } from "reactflow";
 import type { ConnectionSettings, ConnectionDirection } from "@/lib/connectionSettings";
 import type { EdgeLineStyle, EdgePathType } from "@/lib/storage";
 import { buildMarker } from "@/lib/edgeMarkers";
+import {
+  EDGE_SYNC_TYPE_OPTIONS,
+  getSyncVisuals,
+  isSemanticSyncType,
+  resolveEdgeSyncType,
+  type EdgeSyncType,
+} from "@/lib/edgeSyncType";
 
 type Props = {
   edge: Edge | null;
@@ -74,6 +85,7 @@ function edgeToSettings(edge: Edge): ConnectionSettings {
     direction,
     pathType: data.controlPoints?.length ? "custom" : (data.pathType ?? "step"),
     lineStyle: data.lineStyle ?? "solid",
+    syncType: resolveEdgeSyncType(data),
   };
 }
 
@@ -82,6 +94,7 @@ export function EdgeSettingsPanel({ edge, isOpen, onClose, onUpdate, onDelete }:
     direction: "source-to-target",
     pathType: "step",
     lineStyle: "solid",
+    syncType: "push",
   });
   const [label, setLabel] = useState("");
   const [description, setDescription] = useState("");
@@ -115,7 +128,24 @@ export function EdgeSettingsPanel({ edge, isOpen, onClose, onUpdate, onDelete }:
   const updateSettings = useCallback(
     (patch: Partial<ConnectionSettings>) => {
       setSettings((current) => {
-        const nextSettings = { ...current, ...patch };
+        let nextSettings = { ...current, ...patch };
+
+        if (patch.syncType) {
+          const isSemantic = isSemanticSyncType(patch.syncType);
+          const visuals = getSyncVisuals(patch.syncType);
+          nextSettings = {
+            ...nextSettings,
+            // Semantic types lock the line style; "none" keeps the user's manual choice.
+            lineStyle: isSemantic ? visuals.lineStyle : current.lineStyle,
+            direction:
+              patch.syncType === "api"
+                ? "bidirectional"
+                : nextSettings.direction === "bidirectional" && patch.syncType !== "api"
+                  ? "source-to-target"
+                  : nextSettings.direction,
+          };
+        }
+
         const next = { ...stateRef.current, settings: nextSettings };
         stateRef.current = next;
         flush(next);
@@ -161,6 +191,21 @@ export function EdgeSettingsPanel({ edge, isOpen, onClose, onUpdate, onDelete }:
 
       <div className="edge-settings-panel__body edge-settings-panel__body--scroll">
         <OptionGroup
+          label="Sync method"
+          value={settings.syncType}
+          onChange={(syncType) => updateSettings({ syncType })}
+          options={[
+            { id: "push" as EdgeSyncType, label: "Push", icon: <ArrowDownToLine className="h-3.5 w-3.5" /> },
+            { id: "pull" as EdgeSyncType, label: "Pull", icon: <ArrowUpFromLine className="h-3.5 w-3.5" /> },
+            { id: "stream" as EdgeSyncType, label: "Stream", icon: <Radio className="h-3.5 w-3.5" /> },
+            { id: "api" as EdgeSyncType, label: "API", icon: <Webhook className="h-3.5 w-3.5" /> },
+            { id: "none" as EdgeSyncType, label: "None / Custom", icon: <Minus className="h-3.5 w-3.5" /> },
+          ]}
+        />
+        <p className="edge-settings__hint">
+          {EDGE_SYNC_TYPE_OPTIONS.find((opt) => opt.id === settings.syncType)?.hint}
+        </p>
+        <OptionGroup
           label="Direction"
           value={settings.direction}
           onChange={(direction) => updateSettings({ direction })}
@@ -182,20 +227,26 @@ export function EdgeSettingsPanel({ edge, isOpen, onClose, onUpdate, onDelete }:
             { id: "straight", label: "Straight", icon: <MoveHorizontal className="h-3.5 w-3.5" /> },
           ]}
         />
-        <OptionGroup
-          label="Line style"
-          value={settings.lineStyle}
-          onChange={(lineStyle) => updateSettings({ lineStyle })}
-          options={[
-            { id: "solid", label: "Solid" },
-            { id: "dashed", label: "Dashed" },
-          ]}
-        />
+        {!isSemanticSyncType(settings.syncType) && (
+          <OptionGroup
+            label="Line style"
+            value={settings.lineStyle}
+            onChange={(lineStyle) => updateSettings({ lineStyle })}
+            options={[
+              { id: "solid", label: "Solid" },
+              { id: "dashed", label: "Dashed" },
+            ]}
+          />
+        )}
 
         <div className="edge-settings-panel__fields">
           <label className="edge-settings__label">
             Label
-            <Input value={label} onChange={(event) => updateLabel(event.target.value)} placeholder="Short label" />
+            <Input
+              value={label}
+              onChange={(event) => updateLabel(event.target.value)}
+              placeholder="e.g. Nightly ETL or REST API"
+            />
           </label>
           <label className="edge-settings__label">
             Description
@@ -230,31 +281,48 @@ export function applyConnectionSettingsToEdge(
   label: string,
   description: string,
 ): Edge {
-  const strokeColor = "#3b82f6";
-  let markerStartStyle: "none" | "arrowclosed" = "none";
-  let markerEndStyle: "none" | "arrowclosed" = "none";
+  const syncType = settings.syncType;
+  // "none" honors the manual line style; semantic types lock it.
+  const syncVisuals = getSyncVisuals(syncType, {
+    manualLineStyle: settings.lineStyle,
+  });
+  const strokeColor = syncVisuals.strokeColor;
 
-  if (settings.direction === "source-to-target") {
-    markerEndStyle = "arrowclosed";
-  } else if (settings.direction === "target-to-source") {
-    markerStartStyle = "arrowclosed";
-  } else if (settings.direction === "bidirectional") {
-    markerStartStyle = "arrowclosed";
-    markerEndStyle = "arrowclosed";
+  let markerStartStyle = syncVisuals.markerStart;
+  let markerEndStyle = syncVisuals.markerEnd;
+  const lineStyle = syncVisuals.lineStyle;
+
+  // push/pull/none let the user pick the arrow direction; stream/api are locked.
+  if (syncType === "push" || syncType === "pull" || syncType === "none") {
+    if (settings.direction === "source-to-target") {
+      markerEndStyle = "arrowclosed";
+      markerStartStyle = "none";
+    } else if (settings.direction === "target-to-source") {
+      markerStartStyle = "arrowclosed";
+      markerEndStyle = "none";
+    } else if (settings.direction === "bidirectional") {
+      markerStartStyle = "arrowclosed";
+      markerEndStyle = "arrowclosed";
+    } else {
+      markerStartStyle = "none";
+      markerEndStyle = "none";
+    }
   }
 
   const resetBends = settings.pathType !== "custom";
 
   return {
     ...edge,
+    animated: syncVisuals.animated,
     markerStart: buildMarker(markerStartStyle, strokeColor),
     markerEnd: buildMarker(markerEndStyle, strokeColor),
     data: {
       ...edge.data,
       label,
       description,
+      syncType,
       pathType: settings.pathType as EdgePathType,
-      lineStyle: settings.lineStyle as EdgeLineStyle,
+      lineStyle: lineStyle as EdgeLineStyle,
       markerStart: markerStartStyle,
       markerEnd: markerEndStyle,
       controlPoints: resetBends ? undefined : edge.data?.controlPoints,

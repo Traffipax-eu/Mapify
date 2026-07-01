@@ -4,8 +4,10 @@ import { Trash2 } from "lucide-react";
 import { resolveCustomObjectIcon } from "@/lib/customObjects";
 import type { CustomObjectNodeData } from "@/lib/createCustomObjectNode";
 import {
-  FIELD_CONNECTION_MIME,
-  parseFieldConnectionDrag,
+  isConnectionDragMime,
+  readConnectionDragSourceFromEvent,
+  commitConnectionDrag,
+  trackConnectionHoverTarget,
 } from "@/lib/fieldConnectionDnD";
 import { useLineage } from "@/contexts/LineageContext";
 import { useNodeCanvas } from "@/contexts/NodeCanvasContext";
@@ -14,7 +16,7 @@ import { PlusHandle } from "./PlusHandle";
 
 function CustomObjectNodeImpl({ id, data: rawData, selected }: NodeProps<CustomObjectNodeData>) {
   const data: CustomObjectNodeData = rawData ?? { objectId: "custom", label: "Object" };
-  const { onUpdateNodeData, onDeleteNode, onFieldToNodeConnectDrop } = useNodeCanvas();
+  const { onUpdateNodeData, onDeleteNode, onConnectDrop } = useNodeCanvas();
   const { hasLineage, lineageNodeIds, highlightedNodeIds } = useLineage();
   const Icon = resolveCustomObjectIcon(data.iconId, data.objectId);
   const headerColor = data.accent ?? BRAND.blue;
@@ -38,10 +40,11 @@ function CustomObjectNodeImpl({ id, data: rawData, selected }: NodeProps<CustomO
   );
 
   const handleDragOver = (event: React.DragEvent) => {
-    if (!event.dataTransfer.types.includes(FIELD_CONNECTION_MIME)) return;
+    if (!isConnectionDragMime(event.dataTransfer.types)) return;
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "copy";
+    trackConnectionHoverTarget({ kind: "node", nodeId: id });
     setIsConnectTarget(true);
   };
 
@@ -50,18 +53,17 @@ function CustomObjectNodeImpl({ id, data: rawData, selected }: NodeProps<CustomO
   };
 
   const handleDrop = (event: React.DragEvent) => {
-    if (!event.dataTransfer.types.includes(FIELD_CONNECTION_MIME)) return;
+    if (!isConnectionDragMime(event.dataTransfer.types)) return;
     event.preventDefault();
     event.stopPropagation();
     setIsConnectTarget(false);
 
-    const source = parseFieldConnectionDrag(event.dataTransfer.getData(FIELD_CONNECTION_MIME));
-    if (!source || source.sourceNodeId === id) return;
+    const source = readConnectionDragSourceFromEvent(event.dataTransfer);
+    if (!source) return;
+    if (source.sourceNodeId === id) return;
 
-    onFieldToNodeConnectDrop(
-      { nodeId: source.sourceNodeId, fieldId: source.sourceFieldId },
-      id,
-    );
+    commitConnectionDrag();
+    onConnectDrop(source, { kind: "node", nodeId: id });
   };
 
   return (

@@ -3,6 +3,7 @@ import { isInternalBlockFieldEdge } from "@/lib/internalFieldLinks";
 import type { SystemNodeData } from "@/components/nodes/SystemNode";
 import { parseFieldSourceId, parseFieldTargetId } from "@/lib/connectionUtils";
 import { buildMarker, type EdgeMarkerStyle } from "@/lib/edgeMarkers";
+import { getSyncVisuals, resolveEdgeSyncType } from "@/lib/edgeSyncType";
 
 export type LineageAnchor = {
   nodeId: string;
@@ -436,13 +437,15 @@ export function decorateEdgesForDisplay(
     const inLineage = lineageEdgeIds.has(edge.id);
     const isSelected = edge.id === selectedEdgeId;
     const faded = hasLineage && !inLineage && !isSelected;
-    const markerStartStyle = edge.data?.markerStart ?? "none";
-    const markerEndStyle = edge.data?.markerEnd ?? "arrowclosed";
+    const syncType = resolveEdgeSyncType(edge.data);
+    const syncVisuals = getSyncVisuals(syncType, { selected: isSelected, inLineage });
+    const markerStartStyle = edge.data?.markerStart ?? syncVisuals.markerStart;
+    const markerEndStyle = edge.data?.markerEnd ?? syncVisuals.markerEnd;
     const strokeColor = inLineage
       ? "oklch(0.72 0.22 35)"
       : isSelected
         ? "#2563eb"
-        : defaultStrokeColor;
+        : syncVisuals.strokeColor;
 
     return {
       ...edge,
@@ -453,7 +456,7 @@ export function decorateEdgesForDisplay(
           hiddenNodeIds?.has(edge.target) ||
           isInternalBlockFieldEdge(edge),
       ),
-      animated: inLineage,
+      animated: inLineage || syncVisuals.animated,
       zIndex: inLineage || isSelected ? 3 : 1,
       markerStart:
         edge.markerStart ??
@@ -461,7 +464,7 @@ export function decorateEdgesForDisplay(
       markerEnd:
         edge.markerEnd ??
         buildMarker(markerEndStyle as EdgeMarkerStyle, strokeColor),
-      className: `${inLineage ? "edge-lineage" : ""} ${faded ? "edge-faded" : ""}`.trim(),
+      className: `${inLineage ? "edge-lineage" : ""} ${faded ? "edge-faded" : ""} ${syncVisuals.edgeClassName}`.trim(),
     };
   });
 }

@@ -74,6 +74,7 @@ import { LineageProvider, type LineageContextValue } from "@/contexts/LineageCon
 import { NodeCanvasProvider, type NodeCanvasContextValue } from "@/contexts/NodeCanvasContext";
 import { buildMarker } from "@/lib/edgeMarkers";
 import { computeLineageTrace, decorateEdgesForDisplay, type LineageTrace } from "@/lib/lineageTraversal";
+import { rerouteEdgesForCollapsedNodes } from "@/lib/edgeDisplayRouting";
 import { sanitizeFreeformMetadata } from "@/lib/metadataAttributes";
 import { buildFieldMetadataUpdate, getBlockAttributeDefinitions, getFieldAttributeDefinitions } from "@/lib/fieldMetadata";
 import {
@@ -100,9 +101,11 @@ import {
   sortNodesParentFirst,
 } from "@/lib/containerUtils";
 import { DEFAULT_CONNECTION_SETTINGS, type ConnectionSettings } from "@/lib/connectionSettings";
+import { getSyncVisuals } from "@/lib/edgeSyncType";
 import { BRAND } from "@/lib/brand";
 import {
   normalizeConnection,
+  connectionFromDragDrop,
   parseFieldSourceId,
   parseFieldTargetId,
   fieldSourceHandle,
@@ -112,11 +115,14 @@ import {
   upgradeConnectionWithFieldTarget,
   isFieldConnectionHandle,
   isParentConnectionHandle,
+  isContainerConnectionHandle,
+  parseContainerId,
   type NormalizedConnection,
 } from "@/lib/connectionUtils";
 import {
   finishFieldConnectionDrag,
-  tryCommitFieldConnectionDragEnd,
+  finishConnectionDrag,
+  tryCommitConnectionDragEnd,
   resolveFieldConnectionTargetFromPoint,
 } from "@/lib/fieldConnectionDnD";
 import {
@@ -526,18 +532,10 @@ function InnerCanvas() {
 
   const createEdgeFromConnection = useCallback(
     (conn: NormalizedConnection, settings: ConnectionSettings = DEFAULT_CONNECTION_SETTINGS) => {
-      const strokeColor = "#3b82f6";
-      let markerStartStyle: "none" | "arrowclosed" = "none";
-      let markerEndStyle: "none" | "arrowclosed" = "none";
-
-      if (settings.direction === "source-to-target") {
-        markerEndStyle = "arrowclosed";
-      } else if (settings.direction === "target-to-source") {
-        markerStartStyle = "arrowclosed";
-      } else if (settings.direction === "bidirectional") {
-        markerStartStyle = "arrowclosed";
-        markerEndStyle = "arrowclosed";
-      }
+      const syncVisuals = getSyncVisuals(settings.syncType);
+      const strokeColor = syncVisuals.strokeColor;
+      const markerStartStyle = syncVisuals.markerStart;
+      const markerEndStyle = syncVisuals.markerEnd;
 
       const newEdge: Edge = {
         id: `e_${Date.now()}`,
@@ -546,17 +544,21 @@ function InnerCanvas() {
         sourceHandle: conn.sourceHandle,
         targetHandle: conn.targetHandle,
         type: "custom",
+        animated: syncVisuals.animated,
         markerStart: buildMarker(markerStartStyle, strokeColor),
         markerEnd: buildMarker(markerEndStyle, strokeColor),
         data: {
           sourceFieldId: conn.sourceFieldId,
           targetFieldId: conn.targetFieldId,
+          sourceContainerId: conn.sourceContainerId,
+          targetContainerId: conn.targetContainerId,
           sourceNodeId: conn.sourceNodeId,
           targetNodeId: conn.targetNodeId,
           label: "",
           description: "",
+          syncType: settings.syncType,
           pathType: settings.pathType,
-          lineStyle: settings.lineStyle,
+          lineStyle: syncVisuals.lineStyle,
           markerStart: markerStartStyle,
           markerEnd: markerEndStyle,
         },
@@ -604,6 +606,8 @@ function InnerCanvas() {
         targetHandle: fieldTargetHandle(fieldTarget.nodeId, fieldTarget.fieldId),
         sourceFieldId: null,
         targetFieldId: fieldTarget.fieldId,
+        sourceContainerId: null,
+        targetContainerId: null,
         isFieldToField: false,
         isParentToParent: false,
       });
@@ -623,6 +627,22 @@ function InnerCanvas() {
     };
   }, []);
 
+  const handleConnectDrop = useCallback(
+    (
+      source:
+        | { kind: "field-connection"; sourceNodeId: string; sourceFieldId: string }
+        | { kind: "container-connection"; sourceNodeId: string; sourceContainerId: string },
+      target:
+        | { kind: "field"; nodeId: string; fieldId: string }
+        | { kind: "container"; nodeId: string; containerId: string }
+        | { kind: "node"; nodeId: string },
+    ) => {
+      const conn = connectionFromDragDrop(source, target);
+      if (conn) createEdgeFromConnection(conn);
+    },
+    [createEdgeFromConnection],
+  );
+
   const handleFieldConnectDrop = useCallback(
     (
       source: { nodeId: string; fieldId: string },
@@ -639,6 +659,8 @@ function InnerCanvas() {
         targetHandle: fieldTargetHandle(target.nodeId, target.fieldId),
         sourceFieldId: source.fieldId,
         targetFieldId: target.fieldId,
+        sourceContainerId: null,
+        targetContainerId: null,
         isFieldToField: true,
         isParentToParent: false,
       });
@@ -648,12 +670,12 @@ function InnerCanvas() {
 
   useEffect(() => {
     const onDragEnd = (event: DragEvent) => {
-      tryCommitFieldConnectionDragEnd(event.clientX, event.clientY, handleFieldConnectDrop);
-      finishFieldConnectionDrag();
+      tryCommitConnectionDragEnd(event.clientX, event.clientY, handleConnectDrop);
+      finishConnectionDrag();
     };
     window.addEventListener("dragend", onDragEnd);
     return () => window.removeEventListener("dragend", onDragEnd);
-  }, [handleFieldConnectDrop]);
+  }, [handleConnectDrop]);
 
   const handleFieldToNodeConnectDrop = useCallback(
     (source: { nodeId: string; fieldId: string }, targetNodeId: string) => {
@@ -666,6 +688,8 @@ function InnerCanvas() {
         targetHandle: parentTargetHandle(targetNodeId),
         sourceFieldId: source.fieldId,
         targetFieldId: null,
+        sourceContainerId: null,
+        targetContainerId: null,
         isFieldToField: false,
         isParentToParent: false,
       });
@@ -680,31 +704,38 @@ function InnerCanvas() {
     const targetHandle = connection.targetHandle ?? "";
 
     if (connection.source === connection.target) {
-      if (!isFieldConnectionHandle(sourceHandle) || !isFieldConnectionHandle(targetHandle)) {
-        return false;
+      if (isFieldConnectionHandle(sourceHandle) && isFieldConnectionHandle(targetHandle)) {
+        const sourceFieldId =
+          parseFieldSourceId(sourceHandle) ?? parseFieldTargetId(sourceHandle);
+        const targetFieldId =
+          parseFieldTargetId(targetHandle) ?? parseFieldSourceId(targetHandle);
+        return Boolean(sourceFieldId && targetFieldId && sourceFieldId !== targetFieldId);
       }
-      const sourceFieldId =
-        parseFieldSourceId(sourceHandle) ?? parseFieldTargetId(sourceHandle);
-      const targetFieldId =
-        parseFieldTargetId(targetHandle) ?? parseFieldSourceId(targetHandle);
-      return Boolean(sourceFieldId && targetFieldId && sourceFieldId !== targetFieldId);
+
+      if (isContainerConnectionHandle(sourceHandle) && isContainerConnectionHandle(targetHandle)) {
+        const sourceContainerId = parseContainerId(sourceHandle);
+        const targetContainerId = parseContainerId(targetHandle);
+        return Boolean(
+          sourceContainerId && targetContainerId && sourceContainerId !== targetContainerId,
+        );
+      }
+
+      // Same-node field ↔ container, field ↔ parent, container ↔ parent: allow.
+      if (
+        isFieldConnectionHandle(sourceHandle) ||
+        isFieldConnectionHandle(targetHandle) ||
+        isContainerConnectionHandle(sourceHandle) ||
+        isContainerConnectionHandle(targetHandle) ||
+        isParentConnectionHandle(sourceHandle) ||
+        isParentConnectionHandle(targetHandle)
+      ) {
+        return true;
+      }
+
+      return false;
     }
 
-    const sourceIsField = isFieldConnectionHandle(sourceHandle);
-    const targetIsField = isFieldConnectionHandle(targetHandle);
-    const sourceIsParent = isParentConnectionHandle(sourceHandle);
-    const targetIsParent = isParentConnectionHandle(targetHandle);
-
-    if ((sourceIsField && targetIsParent) || (sourceIsParent && targetIsField)) {
-      return true;
-    }
-    if (sourceIsField && targetIsField) {
-      return true;
-    }
-    if (sourceIsParent && targetIsParent) {
-      return true;
-    }
-
+    // Cross-node: permit any handle pairing (fields, blocks, containers, custom objects).
     return true;
   }, []);
 
@@ -976,57 +1007,11 @@ function InnerCanvas() {
     setNodeNameDialogOpen(false);
   }, []);
 
-  // Hide edges that touch a collapsed system to keep the view clean.
-  const collapsedSystemIds = useMemo(
-    () =>
-      new Set(
-        nodes
-          .filter((n) => n.type === "system" && (n.data as SystemNodeData)?.collapsed)
-          .map((n) => n.id),
-      ),
-    [nodes],
+  // Reroute edges to parent/container handles when blocks or nested containers are collapsed.
+  const reroutedEdges = useMemo(
+    () => rerouteEdgesForCollapsedNodes(canvasEdges, canvasNodes),
+    [canvasEdges, canvasNodes],
   );
-
-  // Reroute edges when systems are collapsed (Field-to-Field routing)
-  const reroutedEdges = useMemo(() => {
-    const rerouted: Edge[] = [];
-    
-    for (const edge of canvasEdges) {
-      const sourceNode = canvasNodes.find((n) => n.id === edge.source);
-      const targetNode = canvasNodes.find((n) => n.id === edge.target);
-      
-      if (!sourceNode || !targetNode) {
-        rerouted.push(edge);
-        continue;
-      }
-      
-      const sourceCollapsed = (sourceNode.data as SystemNodeData)?.collapsed;
-      const targetCollapsed = (targetNode.data as SystemNodeData)?.collapsed;
-      const isFieldToField = edge.data?.sourceFieldId && edge.data?.targetFieldId;
-      const isParentToParent = !edge.data?.sourceFieldId && !edge.data?.targetFieldId;
-      
-      // If it's a field-to-field connection and either parent is collapsed, mark as rerouted
-      if (isFieldToField && (sourceCollapsed || targetCollapsed)) {
-        rerouted.push({
-          ...edge,
-          data: {
-            ...edge.data,
-            rerouted: true,
-          },
-        });
-      }
-      // If it's a parent-to-parent connection and either parent is collapsed, keep it connected to parent
-      else if (isParentToParent) {
-        rerouted.push(edge);
-      }
-      // Normal field-to-field connection with both parents expanded
-      else {
-        rerouted.push(edge);
-      }
-    }
-    
-    return rerouted;
-  }, [canvasEdges, canvasNodes]);
 
   const lineage = useMemo(
     () => computeLineageTrace(lineageTrace, nodes, edges),
@@ -1088,10 +1073,9 @@ function InnerCanvas() {
         lineageEdgeIds: lineage.edgeIds,
         hasLineage,
         selectedEdgeId,
-        hiddenNodeIds: collapsedSystemIds,
         defaultStrokeColor: "#3b82f6",
       }),
-    [reroutedEdges, collapsedSystemIds, lineage, hasLineage, selectedEdgeId],
+    [reroutedEdges, lineage, hasLineage, selectedEdgeId],
   );
 
   const applyFieldSelection = useCallback(
@@ -1770,6 +1754,7 @@ function InnerCanvas() {
       onDeleteField: handleDeleteField,
       onFieldConnectDrop: handleFieldConnectDrop,
       onFieldToNodeConnectDrop: handleFieldToNodeConnectDrop,
+      onConnectDrop: handleConnectDrop,
       onUpdateDrawingNodeData: handleUpdateDrawingNodeData,
       onRenameField: handleRenameField,
       onUpdateFieldTableCell: handleUpdateFieldTableCell,
@@ -1792,6 +1777,7 @@ function InnerCanvas() {
       handleDeleteField,
       handleFieldConnectDrop,
       handleFieldToNodeConnectDrop,
+      handleConnectDrop,
       handleUpdateDrawingNodeData,
       handleRenameField,
       handleUpdateFieldTableCell,
